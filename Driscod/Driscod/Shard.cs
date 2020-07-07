@@ -80,6 +80,11 @@ namespace Driscod
 
             _socket = new WebSocket(Connectivity.GetWebSocketEndpoint());
 
+            _socket.Opened += (a, b) =>
+            {
+                Logger.Debug($"[{Name}] Socket opened.");
+            };
+
             _socket.Closed += (a, b) =>
             {
                 Logger.Warn($"[{Name}] Socket closed.");
@@ -115,7 +120,7 @@ namespace Driscod
                 _heartThread?.Abort();
                 _heartThread = new Thread(Heart)
                 {
-                    Name = $"{Name}-HEART",
+                    Name = $"{Name} Heart",
                     IsBackground = true,
                 };
                 _heartThread.Start();
@@ -169,7 +174,7 @@ namespace Driscod
 
         public void Heart()
         {
-            Logger.Info($"[{Name}] Heart started.");
+            Logger.Debug($"[{Name}] Heart started.");
 
             var stopwatch = new Stopwatch();
 
@@ -237,6 +242,8 @@ namespace Driscod
 
         public EventHandler<MessageReceivedEventArgs> AddListener(MessageType type, string[] eventNames, Action<BsonDocument> handler)
         {
+            var handlerName = $"{type}{(eventNames.Length > 0 ? $" ({string.Join(", ", eventNames)})" : string.Empty)}";
+
             var listener = new EventHandler<MessageReceivedEventArgs>((sender, message) =>
             {
                 var doc = BsonDocument.Parse(message.Message);
@@ -255,10 +262,13 @@ namespace Driscod
                         }
                         catch (Exception e)
                         {
-                            Logger.Error(e, $"[{Name}] Handler for {type}{(eventNames.Length > 0 ? $" ({string.Join(", ", eventNames)})" : "")} failed: {e.Message}");
+                            Logger.Error(e, $"[{Name}] Handler for {handlerName} failed: {e}");
                         }
-                    });
-                    thread.IsBackground = true;
+                    })
+                    {
+                        IsBackground = true,
+                        Name = $"{Name} {handlerName} Handler",
+                    };
                     thread.Start();
                 }
             });
