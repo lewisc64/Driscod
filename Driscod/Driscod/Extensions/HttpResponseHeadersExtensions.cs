@@ -10,6 +10,7 @@ namespace Driscod
             var header = headers.FirstOrDefault(x => x.Key == key);
             return header.Key == null ? null : header.Value.FirstOrDefault();
         }
+
         public static string GetFirstValue(this HttpResponseHeaders headers, string key)
         {
             return headers.First(x => x.Key.ToLower() == key.ToLower()).Value.First();

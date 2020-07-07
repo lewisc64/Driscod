@@ -14,9 +14,9 @@ namespace Driscod
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
-        public Dictionary<Tuple<string, string>, string> RateLimitPathBucketMap { get; set; } = new Dictionary<Tuple<string, string>, string>();
+        private Dictionary<Tuple<string, string>, string> RateLimitPathBucketMap { get; set; } = new Dictionary<Tuple<string, string>, string>();
 
-        public Dictionary<string, RateLimit> RateLimits { get; set; } = new Dictionary<string, RateLimit>();
+        private Dictionary<string, RateLimit> RateLimits { get; set; } = new Dictionary<string, RateLimit>();
 
         private Dictionary<Type, Dictionary<string, DiscordObject>> Objects { get; set; } = new Dictionary<Type, Dictionary<string, DiscordObject>>();
 
