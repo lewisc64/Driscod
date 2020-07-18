@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using MongoDB.Bson;
 
 namespace Driscod.DiscordObjects
@@ -13,11 +14,14 @@ namespace Driscod.DiscordObjects
         Text = 0,
         User = 1,
         Voice = 2,
+        Category = 4,
     }
 
     public class Channel : DiscordObject, IMessageable
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
+        private static readonly ChannelType[] UnmessagableChannelTypes = new[] { ChannelType.Voice, ChannelType.Category };
 
         private string _guildId;
 
@@ -39,7 +43,7 @@ namespace Driscod.DiscordObjects
 
         public void SendMessage(string message)
         {
-            if (ChannelType == ChannelType.Voice)
+            if (UnmessagableChannelTypes.Contains(ChannelType))
             {
                 throw new InvalidOperationException($"Cannot send message to channel type {ChannelType}.");
             }
@@ -79,6 +83,8 @@ namespace Driscod.DiscordObjects
                         ChannelType = ChannelType.User; break;
                     case 2:
                         ChannelType = ChannelType.Voice; break;
+                    case 4:
+                        ChannelType = ChannelType.Category; break;
                     default:
                         Logger.Error($"Unknown channel type on channel '{Id}': {doc["type"]}");
                         break;
