@@ -50,7 +50,7 @@ namespace Driscod
                     {
                         Thread.Sleep(retryAfter);
                     }
-                    if (Remaining == 0 && ResetAt != null)
+                    if (Remaining == 0 && ResetAt != null && ResetAt > DateTime.UtcNow)
                     {
                         Thread.Sleep((DateTime)ResetAt - DateTime.UtcNow);
                     }
