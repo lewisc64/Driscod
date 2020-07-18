@@ -3,7 +3,7 @@
 
 ## Example
 
-This example echos any message it recieves.
+This example echos any message it receives.
 
 ```cs
 var bot = new Bot(TOKEN);
