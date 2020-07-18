@@ -1,10 +1,13 @@
 ﻿using System;
+using System.Linq;
 using MongoDB.Bson;
 
 namespace Driscod.DiscordObjects
 {
     public class User : DiscordObject, IMessageable
     {
+        public Presence Presence => Bot.Guilds.FirstOrDefault(x => x.Members.Any(y => y.Id == Id))?.Presences.FirstOrDefault(x => x.User == this);
+
         public string Username { get; private set; }
 
         public string Discriminator { get; private set; }
@@ -16,12 +19,12 @@ namespace Driscod.DiscordObjects
             throw new NotImplementedException();
         }
 
-        internal override void UpdateFromDocument(BsonDocument document)
+        internal override void UpdateFromDocument(BsonDocument doc)
         {
-            Id = document["id"].AsString;
-            Username = document["username"].AsString;
-            Discriminator = document["discriminator"].AsString;
-            Avatar = document.GetValueOrNull("avatar")?.AsString;
+            Id = doc["id"].AsString;
+            Username = doc["username"].AsString;
+            Discriminator = doc["discriminator"].AsString;
+            Avatar = doc.GetValueOrNull("avatar")?.AsString;
         }
     }
 }

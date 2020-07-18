@@ -10,11 +10,15 @@ namespace Driscod.DiscordObjects
 
         private readonly List<string> _channelIds = new List<string>();
 
+        private readonly List<string> _memberIds = new List<string>();
+
         public List<Presence> Presences { get; private set; } = new List<Presence>();
 
         public List<Role> Roles { get; private set; } = new List<Role>();
 
         public IEnumerable<Emoji> Emojis => _emojiIds.Select(x => Bot.GetObject<Emoji>(x));
+
+        public IEnumerable<User> Members => _memberIds.Select(x => Bot.GetObject<User>(x));
 
         public IEnumerable<Channel> Channels => _channelIds.Select(x => Bot.GetObject<Channel>(x));
 
@@ -97,9 +101,10 @@ namespace Driscod.DiscordObjects
 
             if (doc.Contains("members"))
             {
+                _memberIds.Clear();
                 foreach (var memberDoc in doc["members"].AsBsonArray.Cast<BsonDocument>())
                 {
-                    // TODO
+                    _memberIds.Add(memberDoc["user"]["id"].AsString);
                     Bot.CreateOrUpdateObject<User>(memberDoc["user"].AsBsonDocument);
                 }
             }

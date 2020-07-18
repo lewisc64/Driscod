@@ -51,6 +51,8 @@ namespace Driscod
 
         public IEnumerable<Channel> Channels => GetObjects<Channel>();
 
+        public IEnumerable<User> KnownUsers => GetObjects<User>().Where(x => x != User);
+
         public bool Ready => _shards.All(x => x.Ready);
 
         public event EventHandler<Message> OnMessage;
