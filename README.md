@@ -6,12 +6,12 @@
 This example echos any message it recieves.
 
 ```cs
-Bot = new Bot(TOKEN);
-Bot.Start();
+var bot = new Bot(TOKEN);
+bot.Start();
 
-Bot.OnMessage += (_, message) =>
+bot.OnMessage += (_, message) =>
 {
-    if (message.Author != Bot.User)
+    if (message.Author != bot.User)
     {
         message.Channel.SendMessage(message.Content);
     }
