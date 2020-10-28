@@ -1,5 +1,4 @@
-﻿using System;
-using System.Linq;
+﻿using System.Linq;
 using MongoDB.Bson;
 
 namespace Driscod.DiscordObjects
@@ -16,7 +15,12 @@ namespace Driscod.DiscordObjects
 
         public void SendMessage(string message)
         {
-            throw new NotImplementedException();
+            var result = Bot.SendJson(@"users/{0}/channels", new[] { Bot.User.Id }, new BsonDocument { { "recipient_id", Id } });
+
+            Bot.CreateOrUpdateObject<Channel>(result);
+            var channel = Bot.GetObject<Channel>(result["id"].AsString);
+
+            channel.SendMessage(message);
         }
 
         internal override void UpdateFromDocument(BsonDocument doc)

@@ -34,6 +34,8 @@ namespace Driscod
 
         private readonly int _totalShards;
 
+        private readonly int _intents;
+
         private readonly WebSocket _socket;
 
         private int _heartbeatInterval = -1;
@@ -68,15 +70,17 @@ namespace Driscod
                     { "$referring_domain", "" },
                 }
             },
+            { "intents", _intents },
         };
 
         public string Name => $"SHARD-{_shardNumber}";
 
-        public Shard(string token, int shardNumber, int totalShards)
+        public Shard(string token, int shardNumber, int totalShards, int intents = 32767)
         {
             _token = token;
             _shardNumber = shardNumber;
             _totalShards = totalShards;
+            _intents = intents;
 
             _socket = new WebSocket(Connectivity.GetWebSocketEndpoint());
 

@@ -24,6 +24,8 @@ namespace Driscod
 
         private readonly string _token;
 
+        private readonly int _intents;
+
         private string _userId;
 
         private HttpClient _httpClient = null;
@@ -57,9 +59,11 @@ namespace Driscod
 
         public event EventHandler<Message> OnMessage;
 
-        public Bot(string token)
+        public Bot(string token, int intents = 32767)
         {
             _token = token ?? throw new ArgumentNullException(nameof(token), "Token cannot be null.");
+
+            _intents = intents;
 
             CreateShards();
             CreateDispatchListeners();
@@ -200,7 +204,7 @@ namespace Driscod
             var shards = 1; // TODO
             for (var i = 0; i < shards; i++)
             {
-                _shards.Add(new Shard(_token, i, shards));
+                _shards.Add(new Shard(_token, i, shards, intents: _intents));
             }
         }
 
@@ -237,7 +241,8 @@ namespace Driscod
                     new[] { "GUILD_CREATE", "GUILD_UPDATE" },
                     data =>
                     {
-                        CreateOrUpdateObject<Guild>(data, discoveredBy: shard);
+                        if (!GetObjects<Guild>().Any())
+                            CreateOrUpdateObject<Guild>(data, discoveredBy: shard);
                     });
 
                 shard.AddListener(
