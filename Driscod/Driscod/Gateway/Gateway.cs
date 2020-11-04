@@ -1,0 +1,217 @@
+﻿using MongoDB.Bson;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
+using WebSocket4Net;
+
+namespace Driscod.Gateway
+{
+    public abstract class Gateway
+    {
+        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
+        public static bool DetailedLogging { get; set; } = false;
+
+        private bool HeartbeatAcknowledged { get; set; }
+
+        protected Thread _heartThread = null;
+
+        private List<DateTime> LimitTracker { get; set; } = new List<DateTime>();
+
+        protected int Sequence { get; set; }
+
+        protected WebSocket Socket { get; private set; }
+
+        protected int HeartbeatIntervalMilliseconds { get; set; }
+
+        protected bool KeepSocketOpen { get; set; }
+
+        public abstract string Name { get; }
+
+        protected Gateway(string url)
+        {
+            Socket = new WebSocket(url);
+
+            Socket.Opened += (a, b) =>
+            {
+                Logger.Debug($"[{Name}] Socket opened.");
+            };
+
+            Socket.Closed += (a, b) =>
+            {
+                Logger.Warn($"[{Name}] Socket closed.");
+                if (KeepSocketOpen)
+                {
+                    Socket.Open();
+                }
+            };
+
+            AddListener(-1, data =>
+            {
+                if (DetailedLogging)
+                {
+                    Logger.Debug($"[{Name}] <- {data?.ToString() ?? "(no data)"}");
+                }
+            });
+        }
+
+        protected void StartHeart()
+        {
+            _heartThread?.Abort();
+            _heartThread = new Thread(Heart)
+            {
+                Name = $"{Name} Heart",
+                IsBackground = true,
+            };
+            _heartThread.Start();
+        }
+
+        protected void Heart()
+        {
+            Logger.Debug($"[{Name}] Heart started.");
+
+            var stopwatch = new Stopwatch();
+
+            Thread.Sleep(HeartbeatIntervalMilliseconds);
+            while (Socket.State == WebSocketState.Open)
+            {
+                HeartbeatAcknowledged = false;
+                Heartbeat();
+
+                stopwatch.Restart();
+                while (!HeartbeatAcknowledged && stopwatch.Elapsed.Seconds < 10)
+                {
+                    // intentionally empty
+                }
+                if (!HeartbeatAcknowledged)
+                {
+                    Logger.Warn($"[{Name}] Nothing from the venous system.");
+                    break;
+                }
+                stopwatch.Stop();
+
+                Thread.Sleep(HeartbeatIntervalMilliseconds);
+            }
+            Logger.Warn($"[{Name}] Heart stopped.");
+        }
+
+        protected void AcknowledgeHeartbeat()
+        {
+            HeartbeatAcknowledged = true;
+        }
+
+        public void Start()
+        {
+            Logger.Info($"[{Name}] Starting...");
+            while (_heartThread != null && _heartThread.IsAlive)
+            {
+                // intentionally empty
+            }
+            Socket.Open();
+        }
+
+        public void Stop()
+        {
+            Logger.Info($"[{Name}] Stopping...");
+            KeepSocketOpen = false;
+            Socket.Close();
+            while (Socket.State != WebSocketState.Closed)
+            {
+                // intentionally empty
+            }
+        }
+
+        public void Restart()
+        {
+            Stop();
+            Start();
+        }
+
+        protected abstract void Heartbeat();
+
+        public void RateLimitWait(Action callback)
+        {
+            do
+            {
+                LimitTracker.RemoveAll(x => (DateTime.UtcNow - x).TotalSeconds > 60);
+            }
+            while (LimitTracker.Count >= Connectivity.GatewayEventsPerMinute);
+
+            LimitTracker.Add(DateTime.UtcNow);
+            callback();
+        }
+
+        public void Send(int type, BsonValue data = null)
+        {
+            var response = new BsonDocument
+            {
+                { "op", type },
+            };
+            if (data != null)
+            {
+                response["d"] = data;
+            }
+            RateLimitWait(() =>
+            {
+                if (DetailedLogging)
+                {
+                    Logger.Debug($"[{Name}] -> {response.ToString()}");
+                }
+                Socket.Send(response.ToString());
+            });
+        }
+
+        public EventHandler<MessageReceivedEventArgs> AddListener(int type, Action<BsonDocument> handler)
+        {
+            return AddListener(type, new string[0], handler);
+        }
+
+        public EventHandler<MessageReceivedEventArgs> AddListener(int type, string eventName, Action<BsonDocument> handler)
+        {
+            return AddListener(type, new[] { eventName }, handler);
+        }
+
+        public EventHandler<MessageReceivedEventArgs> AddListener(int type, string[] eventNames, Action<BsonDocument> handler)
+        {
+            var handlerName = $"{type}{(eventNames.Length > 0 ? $" ({string.Join(", ", eventNames)})" : string.Empty)}";
+
+            var listener = new EventHandler<MessageReceivedEventArgs>((sender, message) =>
+            {
+                var doc = BsonDocument.Parse(message.Message);
+
+                if (doc.Contains("s") && !doc["s"].IsBsonNull)
+                {
+                    Sequence = doc["s"].AsInt32;
+                }
+                if ((type == -1 || doc["op"] == type) && (!eventNames.Any() || eventNames.Contains(doc["t"].AsString)))
+                {
+                    var thread = new Thread(() =>
+                    {
+                        try
+                        {
+                            handler(!doc["d"].IsBsonDocument ? null : doc["d"].AsBsonDocument);
+                        }
+                        catch (Exception e)
+                        {
+                            Logger.Error(e, $"[{Name}] Handler for {handlerName} failed: {e}");
+                        }
+                    })
+                    {
+                        IsBackground = true,
+                        Name = $"{Name} {handlerName} Handler",
+                    };
+                    thread.Start();
+                }
+            });
+            Socket.MessageReceived += listener;
+            return listener;
+        }
+
+        public void RemoveListener(EventHandler<MessageReceivedEventArgs> handler)
+        {
+            Socket.MessageReceived -= handler;
+        }
+    }
+}

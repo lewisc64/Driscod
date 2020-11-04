@@ -1,4 +1,5 @@
-﻿using MongoDB.Bson;
+﻿using Driscod.Gateway;
+using MongoDB.Bson;
 
 namespace Driscod.DiscordObjects
 {

@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Net;
 using System.Text;
 using System.Threading;
+using Driscod.Gateway;
 
 namespace Driscod
 {
@@ -213,7 +214,7 @@ namespace Driscod
             foreach (var shard in _shards)
             {
                 shard.AddListener(
-                    MessageType.Dispatch,
+                    (int)Shard.MessageType.Dispatch,
                     "READY",
                     data =>
                     {
@@ -222,7 +223,7 @@ namespace Driscod
                     });
 
                 shard.AddListener(
-                    MessageType.Dispatch,
+                    (int)Shard.MessageType.Dispatch,
                     "MESSAGE_CREATE",
                     data =>
                     {
@@ -237,7 +238,7 @@ namespace Driscod
                     });
 
                 shard.AddListener(
-                    MessageType.Dispatch,
+                    (int)Shard.MessageType.Dispatch,
                     new[] { "GUILD_CREATE", "GUILD_UPDATE" },
                     data =>
                     {
@@ -245,7 +246,7 @@ namespace Driscod
                     });
 
                 shard.AddListener(
-                    MessageType.Dispatch,
+                    (int)Shard.MessageType.Dispatch,
                     new[] { "GUILD_DELETE" },
                     data =>
                     {
@@ -253,7 +254,7 @@ namespace Driscod
                     });
 
                 shard.AddListener(
-                    MessageType.Dispatch,
+                    (int)Shard.MessageType.Dispatch,
                     new[] { "CHANNEL_CREATE", "CHANNEL_UPDATE" },
                     data =>
                     {
@@ -268,7 +269,7 @@ namespace Driscod
                     });
 
                 shard.AddListener(
-                    MessageType.Dispatch,
+                    (int)Shard.MessageType.Dispatch,
                     "CHANNEL_DELETE",
                     data =>
                     {
@@ -276,7 +277,7 @@ namespace Driscod
                     });
 
                 shard.AddListener(
-                    MessageType.Dispatch,
+                    (int)Shard.MessageType.Dispatch,
                     "GUILD_EMOJIS_UPDATE",
                     data =>
                     {
@@ -285,7 +286,7 @@ namespace Driscod
                     });
 
                 shard.AddListener(
-                    MessageType.Dispatch,
+                    (int)Shard.MessageType.Dispatch,
                     new[] { "GUILD_ROLE_CREATE", "GUILD_ROLE_UPDATE" },
                     data =>
                     {
@@ -293,7 +294,7 @@ namespace Driscod
                     });
 
                 shard.AddListener(
-                    MessageType.Dispatch,
+                    (int)Shard.MessageType.Dispatch,
                     "GUILD_ROLE_DELETE",
                     data =>
                     {
@@ -301,7 +302,7 @@ namespace Driscod
                     });
 
                 shard.AddListener(
-                    MessageType.Dispatch,
+                    (int)Shard.MessageType.Dispatch,
                     "PRESENCE_UPDATE",
                     data =>
                     {
