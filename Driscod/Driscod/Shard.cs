@@ -28,6 +28,8 @@ namespace Driscod
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
+        public static bool DetailedLogging { get; set; } = false;
+
         private readonly string _token;
 
         private readonly int _shardNumber;
@@ -100,7 +102,10 @@ namespace Driscod
 
             AddListener(MessageType.Any, data =>
             {
-                Logger.Debug($"[{Name}] <- {data?.ToString() ?? "(no data)"}");
+                if (DetailedLogging)
+                {
+                    Logger.Debug($"[{Name}] <- {data?.ToString() ?? "(no data)"}");
+                }
             });
 
             AddListener(MessageType.Hello, data =>
@@ -132,6 +137,7 @@ namespace Driscod
 
             AddListener(MessageType.Dispatch, "READY", data =>
             {
+                Logger.Info($"[{Name}] Ready.");
                 Ready = true;
                 SessionId = data["session_id"].AsString;
             });
@@ -229,7 +235,10 @@ namespace Driscod
             }
             RateLimitWait(() =>
             {
-                Logger.Debug($"[{Name}] -> {response.ToString()}");
+                if (DetailedLogging)
+                {
+                    Logger.Debug($"[{Name}] -> {response.ToString()}");
+                }
                 _socket.Send(response.ToString());
             });
         }

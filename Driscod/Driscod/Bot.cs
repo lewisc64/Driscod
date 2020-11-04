@@ -241,8 +241,7 @@ namespace Driscod
                     new[] { "GUILD_CREATE", "GUILD_UPDATE" },
                     data =>
                     {
-                        if (!GetObjects<Guild>().Any())
-                            CreateOrUpdateObject<Guild>(data, discoveredBy: shard);
+                        CreateOrUpdateObject<Guild>(data, discoveredBy: shard);
                     });
 
                 shard.AddListener(
