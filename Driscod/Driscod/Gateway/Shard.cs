@@ -62,9 +62,10 @@ namespace Driscod.Gateway
                 else
                 {
                     Send((int)MessageType.Identify, Identity);
-                    KeepSocketOpen = true;
-                    StartHeart();
                 }
+
+                KeepSocketOpen = true;
+                StartHeart();
             });
 
             AddListener((int)MessageType.Dispatch, "READY", data =>
@@ -74,15 +75,15 @@ namespace Driscod.Gateway
                 SessionId = data["session_id"].AsString;
             });
 
-            AddListener((int)MessageType.HeartbeatAck, data =>
+            AddListener((int)MessageType.HeartbeatAck, _ =>
             {
-                AcknowledgeHeartbeat();
+                NotifyAcknowledgedHeartbeat();
             });
 
             AddListener((int)MessageType.InvalidSession, data =>
             {
                 Logger.Warn($"[{Name}] Invalid session.");
-                Socket.Close();
+                Restart();
             });
         }        
 

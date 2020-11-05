@@ -23,5 +23,10 @@ namespace Driscod
                 return doc["url"].AsString;
             }
         }
+
+        public static string FormatVoiceSocketEndpoint(string url)
+        {
+            return $"wss://{url}/?v=4";
+        }
     }
 }

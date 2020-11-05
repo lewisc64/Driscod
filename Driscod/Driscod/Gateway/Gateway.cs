@@ -39,33 +39,50 @@ namespace Driscod.Gateway
                 Logger.Debug($"[{Name}] Socket opened.");
             };
 
-            Socket.Closed += (a, b) =>
+            Socket.Closed += (_, e) =>
             {
-                Logger.Warn($"[{Name}] Socket closed.");
+                var evnt = (ClosedEventArgs)e;
+                Logger.Warn($"[{Name}] Socket closed. Code: {evnt.Code}, Reason: {evnt.Reason}");
+                StopHeart();
                 if (KeepSocketOpen)
                 {
                     Socket.Open();
                 }
             };
 
-            AddListener(-1, data =>
+            Socket.MessageReceived += new EventHandler<MessageReceivedEventArgs>((sender, message) =>
             {
                 if (DetailedLogging)
                 {
-                    Logger.Debug($"[{Name}] <- {data?.ToString() ?? "(no data)"}");
+                    Logger.Debug($"[{Name}] <- {message.Message}");
                 }
             });
         }
 
         protected void StartHeart()
         {
-            _heartThread?.Abort();
+            StopHeart();
             _heartThread = new Thread(Heart)
             {
                 Name = $"{Name} Heart",
                 IsBackground = true,
             };
+            Logger.Debug($"[{Name}] Starting heart...");
             _heartThread.Start();
+        }
+
+        protected void StopHeart()
+        {
+            if (_heartThread == null || !_heartThread.IsAlive)
+            {
+                return;
+            }
+            Logger.Debug($"[{Name}] Stopping heart...");
+            _heartThread.Abort();
+            while (_heartThread.IsAlive)
+            {
+                // intentionally empty
+            }
         }
 
         protected void Heart()
@@ -94,25 +111,21 @@ namespace Driscod.Gateway
 
                 Thread.Sleep(HeartbeatIntervalMilliseconds);
             }
-            Logger.Warn($"[{Name}] Heart stopped.");
+            Logger.Error($"[{Name}] Heart stopped.");
         }
 
-        protected void AcknowledgeHeartbeat()
+        protected void NotifyAcknowledgedHeartbeat()
         {
             HeartbeatAcknowledged = true;
         }
 
-        public void Start()
+        public virtual void Start()
         {
             Logger.Info($"[{Name}] Starting...");
-            while (_heartThread != null && _heartThread.IsAlive)
-            {
-                // intentionally empty
-            }
             Socket.Open();
         }
 
-        public void Stop()
+        public virtual void Stop()
         {
             Logger.Info($"[{Name}] Stopping...");
             KeepSocketOpen = false;

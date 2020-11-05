@@ -1,14 +1,12 @@
 ﻿using MongoDB.Bson;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Driscod.Gateway
 {
     public class Voice : Gateway
     {
+        private static Random _random = new Random();
+
         private readonly string _serverId;
 
         private readonly string _userId;
@@ -37,24 +35,35 @@ namespace Driscod.Gateway
 
             Socket.Opened += (a, b) =>
             {
-                Send((int)MessageType.Indentify, Identity);
+                Send((int)MessageType.Identify, Identity);
             };
 
             AddListener((int)MessageType.Ready, data =>
             {
                 // TODO
             });
+
+            AddListener((int)MessageType.Hello, data =>
+            {
+                HeartbeatIntervalMilliseconds = (int)data["heartbeat_interval"].AsDouble;
+                StartHeart();
+            });
+
+            AddListener((int)MessageType.HeartbeatAck, _ =>
+            {
+                NotifyAcknowledgedHeartbeat();
+            });
         }
 
         protected override void Heartbeat()
         {
-            throw new NotImplementedException();
+            Send((int)MessageType.Heartbeat, _random.Next(int.MinValue, int.MaxValue));
         }
 
         public enum MessageType
         {
             Any = -1,
-            Indentify = 0,
+            Identify = 0,
             SelectProtocol = 1,
             Ready = 2,
             Heartbeat = 3,

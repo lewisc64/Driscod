@@ -82,7 +82,7 @@ namespace Driscod.DiscordObjects
 
         internal void UpdateChannel(BsonDocument doc)
         {
-            Bot.CreateOrUpdateObject<Channel>(doc);
+            Bot.CreateOrUpdateObject<Channel>(doc, discoveredBy: DiscoveredOnShard);
             if (!_channelIds.Contains(doc["id"].AsString))
             {
                 _channelIds.Add(doc["id"].AsString);
