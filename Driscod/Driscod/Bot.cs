@@ -60,10 +60,10 @@ namespace Driscod
 
         public event EventHandler<Message> OnMessage;
 
-        public Bot(string token, Intents intents = Intents.All)
+        public Bot(string token, int intents = (int)Intents.All)
         {
             _token = token ?? throw new ArgumentNullException(nameof(token), "Token cannot be null.");
-            _intents = (int)intents;
+            _intents = intents;
 
             CreateShards();
             CreateDispatchListeners();

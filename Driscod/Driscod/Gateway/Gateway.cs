@@ -41,12 +41,19 @@ namespace Driscod.Gateway
 
             Socket.Closed += (_, e) =>
             {
-                var evnt = (ClosedEventArgs)e;
-                Logger.Warn($"[{Name}] Socket closed. Code: {evnt.Code}, Reason: {evnt.Reason}");
+                var evnt = e as ClosedEventArgs;
+                Logger.Warn($"[{Name}] Socket closed. Code: {evnt?.Code}, Reason: {evnt?.Reason}");
                 StopHeart();
                 if (KeepSocketOpen)
                 {
-                    Socket.Open();
+                    try
+                    {
+                        Socket.Open();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error(ex, $"[{Name}] Socket opened during close event handling.");
+                    }
                 }
             };
 
