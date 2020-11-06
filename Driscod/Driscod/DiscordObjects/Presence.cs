@@ -12,16 +12,15 @@ namespace Driscod.DiscordObjects
 
     public class Presence : DiscordObject
     {
+        private string _userId;
 
-        public string UserId { get; private set; }
-
-        public User User => Bot.GetObject<User>(UserId);
+        public User User => Bot.GetObject<User>(_userId);
 
         public PresenceStatus Status { get; private set; }
 
         internal override void UpdateFromDocument(BsonDocument doc)
         {
-            UserId = doc["user"]["id"].AsString;
+            _userId = doc["user"]["id"].AsString;
             switch (doc["status"].AsString)
             {
                 case "online":

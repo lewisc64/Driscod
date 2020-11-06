@@ -201,7 +201,7 @@ namespace Driscod
         {
             _shards = new List<Shard>();
 
-            var shards = 1; // TODO
+            var shards = 1; // TODO: detect how many shards are required.
             for (var i = 0; i < shards; i++)
             {
                 _shards.Add(new Shard(_token, i, shards, intents: _intents));
@@ -306,6 +306,14 @@ namespace Driscod
                     data =>
                     {
                         GetObject<Guild>(data["guild_id"].AsString).UpdatePresence(data);
+                    });
+
+                shard.AddListener(
+                    (int)Shard.MessageType.Dispatch,
+                    "VOICE_STATE_UPDATE",
+                    data =>
+                    {
+                        GetObject<Guild>(data["guild_id"].AsString).UpdateVoiceState(data);
                     });
             }
         }

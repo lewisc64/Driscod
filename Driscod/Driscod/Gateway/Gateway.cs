@@ -28,6 +28,10 @@ namespace Driscod.Gateway
 
         protected bool KeepSocketOpen { get; set; }
 
+        protected virtual IEnumerable<int> RespectedCloseSocketCodes => new int[0];
+
+        protected virtual TimeSpan ReconnectDelay => TimeSpan.FromSeconds(1);
+
         public abstract string Name { get; }
 
         protected Gateway(string url)
@@ -36,23 +40,31 @@ namespace Driscod.Gateway
 
             Socket.Opened += (a, b) =>
             {
-                Logger.Debug($"[{Name}] Socket opened.");
+                Logger.Info($"[{Name}] Socket opened.");
             };
 
             Socket.Closed += (_, e) =>
             {
                 var evnt = e as ClosedEventArgs;
-                Logger.Warn($"[{Name}] Socket closed. Code: {evnt?.Code}, Reason: {evnt?.Reason}");
+                Logger.Info($"[{Name}] Socket closed. Code: {evnt?.Code}, Reason: {evnt?.Reason}");
                 StopHeart();
                 if (KeepSocketOpen)
                 {
-                    try
+                    if (evnt != null && RespectedCloseSocketCodes.Contains(evnt.Code))
                     {
-                        Socket.Open();
+                        Logger.Debug($"[{Name}] Socket is marked to be kept open, but encountered respected close code '{evnt.Code}'.");
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        Logger.Error(ex, $"[{Name}] Socket opened during close event handling.");
+                        try
+                        {
+                            Thread.Sleep(ReconnectDelay);
+                            Socket.Open();
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Error(ex, $"[{Name}] Socket opened during close event handling.");
+                        }
                     }
                 }
             };
@@ -128,13 +140,11 @@ namespace Driscod.Gateway
 
         public virtual void Start()
         {
-            Logger.Info($"[{Name}] Starting...");
             Socket.Open();
         }
 
         public virtual void Stop()
         {
-            Logger.Info($"[{Name}] Stopping...");
             KeepSocketOpen = false;
             Socket.Close();
             while (Socket.State != WebSocketState.Closed)

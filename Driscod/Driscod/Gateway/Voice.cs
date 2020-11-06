@@ -56,6 +56,8 @@ namespace Driscod.Gateway
 
         private uint Ssrc { get; set; }
 
+        protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4006, 4014 }; // Should not reconnect upon forced disconnection.
+
         public override string Name => $"VOICE-{_sessionId}";
 
         public Voice(string url, string serverId, string userId, string sessionId, string token)
@@ -77,6 +79,18 @@ namespace Driscod.Gateway
                     Send((int)MessageType.Identify, Identity);
                 }
             };
+
+            AddListener((int)MessageType.Hello, data =>
+            {
+                HeartbeatIntervalMilliseconds = (int)data["heartbeat_interval"].AsDouble;
+                StartHeart();
+                KeepSocketOpen = true;
+            });
+
+            AddListener((int)MessageType.HeartbeatAck, _ =>
+            {
+                NotifyAcknowledgedHeartbeat();
+            });
 
             AddListener((int)MessageType.Ready, data =>
             {
@@ -116,17 +130,6 @@ namespace Driscod.Gateway
                         }
                     },
                 });
-            });
-
-            AddListener((int)MessageType.Hello, data =>
-            {
-                HeartbeatIntervalMilliseconds = (int)data["heartbeat_interval"].AsDouble;
-                StartHeart();
-            });
-
-            AddListener((int)MessageType.HeartbeatAck, _ =>
-            {
-                NotifyAcknowledgedHeartbeat();
             });
         }
 

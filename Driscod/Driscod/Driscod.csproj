@@ -33,6 +33,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Bot.cs" />
+    <Compile Include="DiscordObjects\VoiceState.cs" />
     <Compile Include="Extensions\BsonDocumentExtensions.cs" />
     <Compile Include="DiscordObjects\Channel.cs" />
     <Compile Include="Connectivity.cs" />

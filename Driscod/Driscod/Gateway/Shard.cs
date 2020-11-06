@@ -1,5 +1,6 @@
 ﻿using MongoDB.Bson;
 using System;
+using System.Collections.Generic;
 
 namespace Driscod.Gateway
 {
@@ -16,6 +17,8 @@ namespace Driscod.Gateway
         private readonly int _intents;
 
         private string SessionId { get; set; }
+
+        protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4010, 4011, 4012, 4013, 4014 };
 
         public bool Ready { get; private set; }
 
@@ -38,7 +41,7 @@ namespace Driscod.Gateway
 
         public override string Name => $"SHARD-{_shardNumber}";
 
-        public Shard(string token, int shardNumber, int totalShards, int intents = 32767)
+        public Shard(string token, int shardNumber, int totalShards, int intents)
             : base(Connectivity.WebSocketEndpoint)
         {
             _token = token;

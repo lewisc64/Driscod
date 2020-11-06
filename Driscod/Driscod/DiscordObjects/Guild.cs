@@ -16,6 +16,8 @@ namespace Driscod.DiscordObjects
 
         public List<Role> Roles { get; private set; } = new List<Role>();
 
+        public List<VoiceState> VoiceStates { get; private set; } = new List<VoiceState>();
+
         public IEnumerable<Emoji> Emojis => _emojiIds.Select(x => Bot.GetObject<Emoji>(x));
 
         public IEnumerable<User> Members => _memberIds.Select(x => Bot.GetObject<User>(x));
@@ -27,8 +29,6 @@ namespace Driscod.DiscordObjects
         public IEnumerable<Channel> VoiceChannels => Channels.Where(x => x.ChannelType == ChannelType.Voice).OrderBy(x => x.Position);
 
         public string VanityUrlCode { get; private set; }
-
-        public BsonArray VoiceStates { get; private set; } // TODO
 
         public string ApplicationId { get; private set; }
 
@@ -50,7 +50,7 @@ namespace Driscod.DiscordObjects
 
         internal void UpdatePresence(BsonDocument doc)
         {
-            var presence = Presences.FirstOrDefault(x => x.UserId == doc["user"]["id"].AsString);
+            var presence = Presences.FirstOrDefault(x => x.User.Id == doc["user"]["id"].AsString);
             if (presence == null)
             {
                 presence = new Presence();
@@ -70,6 +70,24 @@ namespace Driscod.DiscordObjects
                 Roles.Add(role);
             }
             role.UpdateFromDocument(doc);
+        }
+
+        internal void UpdateVoiceState(BsonDocument doc)
+        {
+            var userId = doc.Contains("member") ? doc["member"]["user"]["id"].AsString : doc["user_id"].AsString;
+            var voiceState = VoiceStates.FirstOrDefault(x => x.User.Id == userId);
+            if (doc["channel_id"].IsBsonNull)
+            {
+                VoiceStates.RemoveAll(x => x.User.Id == userId);
+                return;
+            }
+            if (voiceState == null)
+            {
+                voiceState = new VoiceState();
+                voiceState.Bot = Bot;
+                VoiceStates.Add(voiceState);
+            }
+            voiceState.UpdateFromDocument(doc);
         }
 
         internal void DeleteRole(string roleId)
@@ -119,7 +137,7 @@ namespace Driscod.DiscordObjects
                         found.Add(presenceDoc["user"]["id"].AsString);
                         UpdatePresence(presenceDoc);
                     }
-                    Presences.RemoveAll(x => !found.Contains(x.UserId));
+                    Presences.RemoveAll(x => !found.Contains(x.User.Id));
                 }
             }
 
@@ -164,7 +182,12 @@ namespace Driscod.DiscordObjects
 
             if (doc.Contains("voice_states"))
             {
-                VoiceStates = doc["voice_states"].AsBsonArray;
+                //"voice_states":[{"user_id":"123501794377728000","suppress":false,"session_id":"d69237a22271311c6a54642efc76ea47","self_video":false,"self_mute":false,"self_deaf":false,"mute":false,"deaf":false,"channel_id":"709048172953075762"}]
+                foreach (var voiceStateDoc in doc["voice_states"].AsBsonArray.Cast<BsonDocument>())
+                {
+                    voiceStateDoc["guild_id"] = Id;
+                    UpdateVoiceState(voiceStateDoc);
+                }
             }
 
             if (doc.Contains("application_id"))
