@@ -1,6 +1,7 @@
 ﻿using Concentus.Enums;
 using Concentus.Structs;
 using MongoDB.Bson;
+using Sodium;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,6 +14,16 @@ namespace Driscod.Gateway
 {
     public class Voice : Gateway
     {
+        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
+        private const string EncryptionMode = "xsalsa20_poly1305_suffix";
+
+        private const int SampleRate = 48000;
+
+        private const int Channels = 2;
+
+        private const int PacketIntervalMilliseconds = 20;
+
         private static Random _random = new Random();
 
         private readonly string _serverId;
@@ -24,6 +35,10 @@ namespace Driscod.Gateway
         private readonly string _token;
 
         private UdpClient _udpClient = null;
+
+        private Thread _audioThread;
+
+        private Thread _keepAliveThread;
 
         private BsonDocument Identity => new BsonDocument
         {
@@ -45,6 +60,34 @@ namespace Driscod.Gateway
                 {
                     _udpClient = new UdpClient();
                     _udpClient.Connect(UdpSocketIpAddress, UdpSocketPort);
+
+                    ulong value = 0;
+                    var nextMessage = Environment.TickCount;
+                    _keepAliveThread = new Thread(() =>
+                    {
+                        while (true)
+                        {
+                            if (Environment.TickCount < nextMessage)
+                            {
+                                Thread.Sleep(nextMessage - Environment.TickCount);
+                            }
+                            if (BitConverter.IsLittleEndian)
+                            {
+                                UdpClient.Send(BitConverter.GetBytes(value).Reverse().ToArray(), 8);
+                            }
+                            else
+                            {
+                                UdpClient.Send(BitConverter.GetBytes(value), 8);
+                            }
+
+                            var endpoint = GetUdpEndpoint();
+                            var response = UdpClient.Receive(ref endpoint);
+
+                            value++;
+                            nextMessage = Environment.TickCount + 2000;
+                        }
+                    });
+                    _keepAliveThread.Start();
                 }
                 return _udpClient;
             }
@@ -52,13 +95,21 @@ namespace Driscod.Gateway
 
         private IEnumerable<string> Modes { get; set; }
 
-        private string Mode => "xsalsa20_poly1305_suffix";
+        private int Ssrc { get; set; }
 
-        private uint Ssrc { get; set; }
+        private byte[] SecretKey { get; set; }
+
+        private int FrameSize => SampleRate / (1000 / PacketIntervalMilliseconds);
+
+        private readonly Queue<byte[]> QueuedRtpPayloads = new Queue<byte[]>();
 
         protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4006, 4014 }; // Should not reconnect upon forced disconnection.
 
         public override string Name => $"VOICE-{_sessionId}";
+
+        public bool Ready { get; private set; } = false;
+
+        public bool Speaking { get; private set; } = false;
 
         public Voice(string url, string serverId, string userId, string sessionId, string token)
             : base(url)
@@ -77,6 +128,7 @@ namespace Driscod.Gateway
                 else
                 {
                     Send((int)MessageType.Identify, Identity);
+                    Ready = false;
                 }
             };
 
@@ -97,26 +149,27 @@ namespace Driscod.Gateway
                 UdpSocketIpAddress = data["ip"].AsString;
                 UdpSocketPort = (ushort)data["port"].AsInt32;
                 Modes = data["modes"].AsBsonArray.Cast<string>();
-                Ssrc = (uint)data["ssrc"].AsInt32;
+                Ssrc = data["ssrc"].AsInt32;
 
-                var datagram = new byte[] { 0, 1, 0, 70 }.Concat(BitConverter.GetBytes(Ssrc)).Concat(Enumerable.Repeat((byte)0, 66)).ToArray();
+                byte[] ssrcBytes;
+
+                if (BitConverter.IsLittleEndian)
+                {
+                    ssrcBytes = BitConverter.GetBytes(Ssrc).Reverse().ToArray();
+                }
+                else
+                {
+                    ssrcBytes = BitConverter.GetBytes(Ssrc);
+                }
+
+                var datagram = new byte[] { 0, 1, 0, 70 }.Concat(ssrcBytes).Concat(Enumerable.Repeat((byte)0, 66)).ToArray();
                 UdpClient.Send(datagram, datagram.Length);
 
                 var endpoint = GetUdpEndpoint();
                 var response = UdpClient.Receive(ref endpoint);
 
-                var port = BitConverter.ToUInt16(response, 72);
-
-                var bytes = new List<byte>();
-                foreach (var addrByte in response.Skip(8))
-                {
-                    if (addrByte == 0)
-                    {
-                        break;
-                    }
-                    bytes.Add(addrByte);
-                }
-                var address = Encoding.UTF8.GetString(bytes.ToArray(), 0, bytes.Count);
+                var port = BitConverter.ToUInt16(response.Reverse().Take(2).ToArray(), 0);
+                var address = Encoding.UTF8.GetString(response.Skip(8).TakeWhile(x => x != 0).ToArray());
 
                 Send((int)MessageType.SelectProtocol, new BsonDocument
                 {
@@ -126,10 +179,23 @@ namespace Driscod.Gateway
                         {
                             { "address", address },
                             { "port", port },
-                            { "mode", Mode },
+                            { "mode", EncryptionMode },
                         }
                     },
                 });
+            });
+
+            AddListener((int)MessageType.SessionDescription, data =>
+            {
+                SecretKey = data["secret_key"].AsBsonArray.Select(x => (byte)x.AsInt32).ToArray();
+                Ready = true;
+
+                _audioThread = new Thread(AudioLoop);
+                _audioThread.Start();
+
+                Thread.Sleep(5000);
+
+                SendAudio(Enumerable.Range(1, 48000 * 2 * 10).Select(x => (short)_random.Next(short.MinValue, short.MaxValue)).ToArray());
             });
         }
 
@@ -138,7 +204,7 @@ namespace Driscod.Gateway
             Send((int)MessageType.Heartbeat, _random.Next(int.MinValue, int.MaxValue));
         }
 
-        private void IndicateSpeaking(Action callback)
+        private void BeginSpeaking()
         {
             Send((int)MessageType.Speaking, new BsonDocument
             {
@@ -146,40 +212,105 @@ namespace Driscod.Gateway
                 { "delay", 0 },
                 { "speaking", 1 },
             });
+            Speaking = true;
+            Logger.Info($"[{Name}] Speaking.");
+        }
 
-            try
+        private void EndSpeaking()
+        {
+            Send((int)MessageType.Speaking, new BsonDocument
             {
-                callback();
-            }
-            finally
+                { "ssrc", Ssrc },
+                { "delay", 0 },
+                { "speaking", 0 },
+            });
+            Speaking = false;
+            Logger.Info($"[{Name}] Stopped speaking.");
+        }
+
+        private void AudioLoop()
+        {
+            var nextFrame = Environment.TickCount;
+            uint timestamp = (uint)(uint.MaxValue * _random.NextDouble());
+            ushort sequence = (ushort)(ushort.MaxValue * _random.NextDouble());
+
+            while (true)
             {
-                Send((int)MessageType.Speaking, new BsonDocument
+                List<byte> packet = null;
+
+                if (QueuedRtpPayloads.Any())
                 {
-                    { "ssrc", Ssrc },
-                    { "delay", 0 },
-                    { "speaking", 0 },
-                });
+                    if (!Speaking)
+                    {
+                        BeginSpeaking();
+                    }
+
+                    packet = new List<byte>() { 0x80, 0x78 };
+
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        packet.AddRange(BitConverter.GetBytes(sequence).Reverse());
+                        packet.AddRange(BitConverter.GetBytes(timestamp).Reverse());
+                        packet.AddRange(BitConverter.GetBytes((uint)Ssrc).Reverse());
+                    }
+                    else
+                    {
+                        packet.AddRange(BitConverter.GetBytes(sequence));
+                        packet.AddRange(BitConverter.GetBytes(timestamp));
+                        packet.AddRange(BitConverter.GetBytes((uint)Ssrc));
+                    }
+
+                    packet.AddRange(QueuedRtpPayloads.Dequeue());
+                }
+                else
+                {
+                    if (Speaking)
+                    {
+                        EndSpeaking();
+                    }
+                }
+
+                if (Environment.TickCount < nextFrame)
+                {
+                    Thread.Sleep(nextFrame - Environment.TickCount);
+                }
+                if (packet != null)
+                {
+                    UdpClient.Send(packet.ToArray(), packet.Count);
+                }
+                nextFrame = Environment.TickCount + PacketIntervalMilliseconds;
+
+                sequence++;
+                timestamp += (uint)FrameSize;
             }
         }
 
-        //private void SendAudio(short[] samples)
-        //{
-        //    OpusEncoder encoder = OpusEncoder.Create(48000, 2, OpusApplication.OPUS_APPLICATION_AUDIO);
+        private void QueueSilence()
+        {
+            SendAudio(Enumerable.Repeat((short)0, FrameSize * 10).ToArray(), padSilence: false);
+        }
 
-        //    ushort sequence = 0;
-        //    int frameSize = 960;
+        public void SendAudio(short[] samples, bool padSilence = true)
+        {
+            OpusEncoder encoder = OpusEncoder.Create(SampleRate, Channels, OpusApplication.OPUS_APPLICATION_AUDIO);
 
-        //    for (var i = 0; i < samples.Length; i += frameSize)
-        //    {
-        //        var inputBuffer = samples.Skip(i).Take(frameSize).ToArray();
-        //        var outputBuffer = new byte[1000];
-        //        int packetSize = encoder.Encode(inputBuffer, 0, frameSize, outputBuffer, 0, outputBuffer.Length);
+            for (var i = 0; i < samples.Length; i += FrameSize * 2)
+            {
+                var inputBuffer = samples.Skip(i).Take(FrameSize * 2).ToArray();
 
-        //        var timestamp = DateTime.UtcNow.
+                var opusPacket = new byte[1000];
+                int opusPacketSize = encoder.Encode(inputBuffer, 0, FrameSize, opusPacket, 0, opusPacket.Length);
+                opusPacket = opusPacket.Take(opusPacketSize).ToArray();
 
-        //        sequence++;
-        //    }
-        //}
+                var nonce = Enumerable.Range(1, 24).Select(x => (byte)_random.Next(byte.MinValue, byte.MaxValue)).ToArray();
+                QueuedRtpPayloads.Enqueue(StreamEncryption.Encrypt(opusPacket, nonce, SecretKey).Concat(nonce).ToArray());
+            }
+
+            if (padSilence)
+            {
+                QueueSilence();
+            }
+        }
 
         private IPEndPoint GetUdpEndpoint()
         {
