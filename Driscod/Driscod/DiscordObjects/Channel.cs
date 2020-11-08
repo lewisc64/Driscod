@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Driscod.Gateway;
 using MongoDB.Bson;
-using WebSocket4Net;
 
 namespace Driscod.DiscordObjects
 {
@@ -74,74 +72,53 @@ namespace Driscod.DiscordObjects
             {
                 throw new InvalidOperationException($"Cannot connect voice to channel of type '{ChannelType}'.");
             }
-
-            EventHandler<MessageReceivedEventArgs> voiceStateListener = null, voiceServerListener = null;
-            string endpoint, sessionId, token;
-
-            try
+            
+            var sent = false;
+            Action sendAction = () =>
             {
-                var stateTcs = new TaskCompletionSource<BsonDocument>();
-
-                var serverTcs = new TaskCompletionSource<BsonDocument>();
-
-                voiceStateListener = DiscoveredOnShard.AddListener((int)Shard.MessageType.Dispatch, "VOICE_STATE_UPDATE", data =>
+                if (!sent)
                 {
-                    if (data["guild_id"].AsString == Guild.Id && data["channel_id"] == Id && data["user_id"].AsString == Bot.User.Id)
+                    DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
                     {
-                        stateTcs.SetResult(data);
-                    }
-                });
-
-                voiceServerListener = DiscoveredOnShard.AddListener((int)Shard.MessageType.Dispatch, "VOICE_SERVER_UPDATE", data =>
-                {
-                    if (data["guild_id"].AsString == Guild.Id)
-                    {
-                        serverTcs.SetResult(data);
-                    }
-                });
-
-                DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
-                {
-                    { "guild_id", Guild.Id },
-                    { "channel_id", Id },
-                    { "self_mute", false },
-                    { "self_deaf", false },
-                });
-
-                var combinedTask = Task.WhenAll(stateTcs.Task, serverTcs.Task);
-
-                Task.WaitAny(
-                    combinedTask,
-                    new Task(() =>
-                    {
-                        Thread.Sleep(10000);
-                    }));
-
-                if (!combinedTask.IsCompleted)
-                {
-                    throw new TimeoutException("Timed out waiting for gateway response.");
+                        { "guild_id", Guild.Id },
+                        { "channel_id", Id },
+                        { "self_mute", false },
+                        { "self_deaf", false },
+                    });
                 }
+                sent = true;
+            };
 
-                var stateData = stateTcs.Task.Result;
-                var serverData = serverTcs.Task.Result;
+            BsonDocument stateData = null;
+            BsonDocument serverData = null;
 
-                endpoint = serverData["endpoint"].AsString;
-                token = serverData["token"].AsString;
-                sessionId = stateData["session_id"].AsString;
-            }
-            finally
-            {
-                if (voiceStateListener != null)
+            Task.WhenAll(
+                Task.Run(() =>
                 {
-                    DiscoveredOnShard.RemoveListener(voiceStateListener);
-                }
-                if (voiceServerListener != null)
+                    stateData = DiscoveredOnShard.WaitForEvent<BsonDocument>(
+                        (int)Shard.MessageType.Dispatch,
+                        "VOICE_STATE_UPDATE",
+                        listenerCreateCallback: sendAction,
+                        validator: data =>
+                        {
+                            return data["guild_id"].AsString == Guild.Id && data["channel_id"] == Id && data["user_id"].AsString == Bot.User.Id;
+                        },
+                        timeout: TimeSpan.FromSeconds(10));
+                }),
+                Task.Run(() =>
                 {
-                    DiscoveredOnShard.RemoveListener(voiceServerListener);
-                }
-            }
+                    serverData = DiscoveredOnShard.WaitForEvent<BsonDocument>(
+                        (int)Shard.MessageType.Dispatch,
+                        "VOICE_SERVER_UPDATE",
+                        listenerCreateCallback: sendAction,
+                        validator: data =>
+                        {
+                            return data["guild_id"].AsString == Guild.Id;
+                        },
+                        timeout: TimeSpan.FromSeconds(10));
+                })).Wait();
 
-            var voice = new Voice(Connectivity.FormatVoiceSocketEndpoint(endpoint), Guild.Id, Bot.User.Id, sessionId, token);
+            var voice = new Voice(Connectivity.FormatVoiceSocketEndpoint(serverData["endpoint"].AsString), Guild.Id, Bot.User.Id, stateData["session_id"].AsString, serverData["token"].AsString);
             voice.Start();
 
             return voice;

@@ -16,12 +16,6 @@ namespace Driscod.Gateway
 
         private readonly int _intents;
 
-        private string SessionId { get; set; }
-
-        protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4010, 4011, 4012, 4013, 4014 };
-
-        public bool Ready { get; private set; }
-
         private BsonDocument Identity => new BsonDocument
         {
             { "token", _token },
@@ -39,6 +33,12 @@ namespace Driscod.Gateway
             { "intents", _intents },
         };
 
+        private string SessionId { get; set; }
+
+        protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4010, 4011, 4012, 4013, 4014 };
+
+        public bool Ready { get; private set; }
+
         public override string Name => $"SHARD-{_shardNumber}";
 
         public Shard(string token, int shardNumber, int totalShards, int intents)
@@ -49,7 +49,7 @@ namespace Driscod.Gateway
             _totalShards = totalShards;
             _intents = intents;
 
-            AddListener((int)MessageType.Hello, data =>
+            AddListener<BsonDocument>((int)MessageType.Hello, data =>
             {
                 HeartbeatIntervalMilliseconds = data["heartbeat_interval"].AsInt32;
 
@@ -71,24 +71,30 @@ namespace Driscod.Gateway
                 StartHeart();
             });
 
-            AddListener((int)MessageType.Dispatch, "READY", data =>
+            AddListener<BsonDocument>((int)MessageType.Dispatch, "READY", data =>
             {
                 Logger.Info($"[{Name}] Ready.");
                 Ready = true;
                 SessionId = data["session_id"].AsString;
             });
 
-            AddListener((int)MessageType.HeartbeatAck, _ =>
-            {
-                NotifyAcknowledgedHeartbeat();
-            });
-
-            AddListener((int)MessageType.InvalidSession, data =>
+            AddListener<object>((int)MessageType.InvalidSession, _ =>
             {
                 Logger.Warn($"[{Name}] Invalid session.");
                 Restart();
             });
-        }        
+        }
+
+        protected override void Heartbeat()
+        {
+            WaitForEvent<BsonDocument>(
+                (int)MessageType.HeartbeatAck,
+                listenerCreateCallback: () =>
+                {
+                    Send((int)MessageType.Heartbeat, Sequence);
+                },
+                timeout: TimeSpan.FromSeconds(10));
+        }
 
         public enum MessageType
         {
@@ -104,11 +110,6 @@ namespace Driscod.Gateway
             InvalidSession = 9,
             Hello = 10,
             HeartbeatAck = 11,
-        }
-
-        protected override void Heartbeat()
-        {
-            Send((int)MessageType.Heartbeat, Sequence);
         }
     }
 }

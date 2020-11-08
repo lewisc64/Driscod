@@ -1,9 +1,9 @@
 ﻿using MongoDB.Bson;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using WebSocket4Net;
 
 namespace Driscod.Gateway
@@ -14,23 +14,25 @@ namespace Driscod.Gateway
 
         public static bool DetailedLogging { get; set; } = false;
 
-        private bool HeartbeatAcknowledged { get; set; }
-
         protected Thread _heartThread = null;
 
         private List<DateTime> LimitTracker { get; set; } = new List<DateTime>();
 
+        private List<Thread> Threads { get; set; } = new List<Thread>();
+
         protected int Sequence { get; set; }
 
         protected WebSocket Socket { get; private set; }
-
-        protected int HeartbeatIntervalMilliseconds { get; set; }
 
         protected bool KeepSocketOpen { get; set; }
 
         protected virtual IEnumerable<int> RespectedCloseSocketCodes => new int[0];
 
         protected virtual TimeSpan ReconnectDelay => TimeSpan.FromSeconds(1);
+
+        protected CancellationTokenSource CancellationToken { get; set; }
+
+        protected int HeartbeatIntervalMilliseconds { get; set; }
 
         public abstract string Name { get; }
 
@@ -47,25 +49,24 @@ namespace Driscod.Gateway
             {
                 var evnt = e as ClosedEventArgs;
                 Logger.Info($"[{Name}] Socket closed. Code: {evnt?.Code}, Reason: {evnt?.Reason}");
-                StopHeart();
+
                 if (KeepSocketOpen)
                 {
                     if (evnt != null && RespectedCloseSocketCodes.Contains(evnt.Code))
                     {
                         Logger.Debug($"[{Name}] Socket is marked to be kept open, but encountered respected close code '{evnt.Code}'.");
+                        PurgeThreads();
                     }
                     else
                     {
-                        try
-                        {
-                            Thread.Sleep(ReconnectDelay);
-                            Socket.Open();
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.Error(ex, $"[{Name}] Socket opened during close event handling.");
-                        }
+                        PurgeThreads();
+                        Thread.Sleep(ReconnectDelay);
+                        Start();
                     }
+                }
+                else
+                {
+                    PurgeThreads();
                 }
             };
 
@@ -78,76 +79,29 @@ namespace Driscod.Gateway
             });
         }
 
-        protected void StartHeart()
-        {
-            StopHeart();
-            _heartThread = new Thread(Heart)
-            {
-                Name = $"{Name} Heart",
-                IsBackground = true,
-            };
-            Logger.Debug($"[{Name}] Starting heart...");
-            _heartThread.Start();
-        }
-
-        protected void StopHeart()
-        {
-            if (_heartThread == null || !_heartThread.IsAlive)
-            {
-                return;
-            }
-            Logger.Debug($"[{Name}] Stopping heart...");
-            _heartThread.Abort();
-            while (_heartThread.IsAlive)
-            {
-                // intentionally empty
-            }
-        }
-
-        protected void Heart()
-        {
-            Logger.Debug($"[{Name}] Heart started.");
-
-            var stopwatch = new Stopwatch();
-
-            Thread.Sleep(HeartbeatIntervalMilliseconds);
-            while (Socket.State == WebSocketState.Open)
-            {
-                HeartbeatAcknowledged = false;
-                Heartbeat();
-
-                stopwatch.Restart();
-                while (!HeartbeatAcknowledged && stopwatch.Elapsed.Seconds < 10)
-                {
-                    // intentionally empty
-                }
-                if (!HeartbeatAcknowledged)
-                {
-                    Logger.Warn($"[{Name}] Nothing from the venous system.");
-                    break;
-                }
-                stopwatch.Stop();
-
-                Thread.Sleep(HeartbeatIntervalMilliseconds);
-            }
-            Logger.Error($"[{Name}] Heart stopped.");
-        }
-
-        protected void NotifyAcknowledgedHeartbeat()
-        {
-            HeartbeatAcknowledged = true;
-        }
-
         public virtual void Start()
         {
-            Socket.Open();
+            CancellationToken = new CancellationTokenSource();
+            CancellationToken.Token.Register(() =>
+            {
+                Logger.Debug($"[{Name}] Cancellation requested, threads should stop.");
+            });
+
+            try
+            {
+                Socket.Open();
+            }
+            catch (Exception)
+            {
+                Logger.Warn($"[{Name}] Attempted to open socket, but socket was not closed.");
+            }
         }
 
         public virtual void Stop()
         {
             KeepSocketOpen = false;
-            Socket.Close();
-            while (Socket.State != WebSocketState.Closed)
+            Socket.Close("Internal stop call.");
+            while (Socket.State != WebSocketState.Closed || Threads.Any())
             {
                 // intentionally empty
             }
@@ -157,20 +111,6 @@ namespace Driscod.Gateway
         {
             Stop();
             Start();
-        }
-
-        protected abstract void Heartbeat();
-
-        public void RateLimitWait(Action callback)
-        {
-            do
-            {
-                LimitTracker.RemoveAll(x => (DateTime.UtcNow - x).TotalSeconds > 60);
-            }
-            while (LimitTracker.Count >= Connectivity.GatewayEventsPerMinute);
-
-            LimitTracker.Add(DateTime.UtcNow);
-            callback();
         }
 
         public void Send(int type, BsonValue data = null)
@@ -193,19 +133,77 @@ namespace Driscod.Gateway
             });
         }
 
-        public EventHandler<MessageReceivedEventArgs> AddListener(int type, Action<BsonDocument> handler)
+        public T WaitForEvent<T>(int type, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
         {
-            return AddListener(type, new string[0], handler);
+            return WaitForEvent(type, new string[0], listenerCreateCallback: listenerCreateCallback, validator: validator, timeout: timeout);
         }
 
-        public EventHandler<MessageReceivedEventArgs> AddListener(int type, string eventName, Action<BsonDocument> handler)
+        public T WaitForEvent<T>(int type, string eventName, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
         {
-            return AddListener(type, new[] { eventName }, handler);
+            return WaitForEvent(type, new[] { eventName }, listenerCreateCallback: listenerCreateCallback, validator: validator, timeout: timeout);
         }
 
-        public EventHandler<MessageReceivedEventArgs> AddListener(int type, string[] eventNames, Action<BsonDocument> handler)
+        public T WaitForEvent<T>(int type, IEnumerable<string> eventNames, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
         {
-            var handlerName = $"{type}{(eventNames.Length > 0 ? $" ({string.Join(", ", eventNames)})" : string.Empty)}";
+            EventHandler<MessageReceivedEventArgs> handler = null;
+            try
+            {
+                var tcs = new TaskCompletionSource<bool>();
+                T result = default(T);
+
+                handler = AddListener<T>(type, eventNames, data =>
+                {
+                    if (validator == null || validator.Invoke(data))
+                    {
+                        result = data;
+                        tcs.SetResult(true);
+                    }
+                });
+
+                listenerCreateCallback?.Invoke();
+
+                if (timeout == null)
+                {
+                    tcs.Task.Wait(CancellationToken.Token);
+                }
+                else
+                {
+                    Task.WhenAny(
+                        tcs.Task,
+                        Task.Delay((int)timeout.Value.TotalMilliseconds, CancellationToken.Token)).Wait();
+                }
+
+                CancellationToken.Token.ThrowIfCancellationRequested();
+
+                if (!tcs.Task.IsCompleted)
+                {
+                    throw new TimeoutException();
+                }
+
+                return result;
+            }
+            finally
+            {
+                if (handler != null)
+                {
+                    RemoveListener(handler);
+                }
+            }
+        }
+
+        public EventHandler<MessageReceivedEventArgs> AddListener<T>(int type, Action<T> handler)
+        {
+            return AddListener<T>(type, new string[0], handler);
+        }
+
+        public EventHandler<MessageReceivedEventArgs> AddListener<T>(int type, string eventName, Action<T> handler)
+        {
+            return AddListener<T>(type, new[] { eventName }, handler);
+        }
+
+        public EventHandler<MessageReceivedEventArgs> AddListener<T>(int type, IEnumerable<string> eventNames, Action<T> handler)
+        {
+            var handlerName = $"{type}{(eventNames.Any() ? $" ({string.Join(", ", eventNames)})" : string.Empty)}";
 
             var listener = new EventHandler<MessageReceivedEventArgs>((sender, message) =>
             {
@@ -217,31 +215,146 @@ namespace Driscod.Gateway
                 }
                 if ((type == -1 || doc["op"] == type) && (!eventNames.Any() || eventNames.Contains(doc["t"].AsString)))
                 {
-                    var thread = new Thread(() =>
+                    Task.Run(() =>
                     {
                         try
                         {
-                            handler(!doc["d"].IsBsonDocument ? null : doc["d"].AsBsonDocument);
+                            if (typeof(T) == typeof(BsonDocument))
+                            {
+                                handler((T)(object)(doc["d"].IsBsonNull ? null : doc["d"].AsBsonDocument));
+                            }
+                            else
+                            {
+                                handler((T)BsonTypeMapper.MapToDotNetValue(doc["d"]));
+                            }
                         }
                         catch (Exception e)
                         {
                             Logger.Error(e, $"[{Name}] Handler for {handlerName} failed: {e}");
                         }
-                    })
-                    {
-                        IsBackground = true,
-                        Name = $"{Name} {handlerName} Handler",
-                    };
-                    thread.Start();
+                    });
                 }
             });
             Socket.MessageReceived += listener;
+
+            if (DetailedLogging)
+            {
+                Logger.Debug($"[{Name}] Listener created for {handlerName}.");
+            }
+
             return listener;
         }
 
         public void RemoveListener(EventHandler<MessageReceivedEventArgs> handler)
         {
             Socket.MessageReceived -= handler;
+        }
+
+        protected void ManageThread(Thread thread, string name = null)
+        {
+            if (!thread.IsAlive)
+            {
+                thread.Start();
+            }
+            Threads.Add(thread);
+            thread.Name = name ?? $"{Name} {thread.ManagedThreadId}";
+        }
+
+        protected void StartHeart()
+        {
+            if (Threads.Any(x => x.Name == $"{Name} Heart"))
+            {
+                throw new InvalidOperationException("Heart is already running.");
+            }
+            ManageThread(new Thread(Heart), name: $"{Name} Heart");
+        }
+
+        protected void Heart()
+        {
+            Logger.Debug($"[{Name}] Heart started.");
+
+            var nextHeartbeat = Environment.TickCount + HeartbeatIntervalMilliseconds;
+
+            try
+            {
+                while (Socket.State == WebSocketState.Open && !CancellationToken.IsCancellationRequested)
+                {
+                    if (Environment.TickCount < nextHeartbeat)
+                    {
+                        Task.Delay(nextHeartbeat - Environment.TickCount, CancellationToken.Token).Wait();
+                    }
+
+                    if (CancellationToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    nextHeartbeat = Environment.TickCount + HeartbeatIntervalMilliseconds;
+                    Heartbeat();
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                // intentionally empty.
+            }
+            catch (OperationCanceledException)
+            {
+                // intentionally empty.
+            }
+            catch (AggregateException ex)
+            {
+                if (!ex.Flatten().InnerExceptions.All(x => x is TaskCanceledException || x is OperationCanceledException))
+                {
+                    Logger.Error(ex, $"Exception in heart: {ex.ToString()}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, $"Exception in heart: {ex.ToString()}");
+            }
+            finally
+            {
+                Logger.Debug($"[{Name}] Heart stopped.");
+            }
+        }
+
+        protected abstract void Heartbeat();
+
+        private void RateLimitWait(Action callback)
+        {
+            do
+            {
+                LimitTracker.RemoveAll(x => (DateTime.UtcNow - x).TotalSeconds > 60);
+            }
+            while (LimitTracker.Count >= Connectivity.GatewayEventsPerMinute);
+
+            LimitTracker.Add(DateTime.UtcNow);
+            callback();
+        }
+
+        private void PurgeThreads()
+        {
+            Logger.Debug($"[{Name}] Purging threads...");
+
+            if (!CancellationToken.IsCancellationRequested)
+            {
+                CancellationToken.Cancel();
+            }
+            else
+            {
+                Logger.Warn($"[{Name}] Cancellation requested before thread purge call.");
+            }
+
+            foreach (var thread in Threads)
+            {
+                if (!thread.Join(30000))
+                {
+                    Logger.Warn($"[{Name}] Thread '{thread.Name}' still alive after 30 seconds. Aborting...");
+                    thread.Abort();
+                }
+            }
+
+            Threads.Clear();
         }
     }
 }

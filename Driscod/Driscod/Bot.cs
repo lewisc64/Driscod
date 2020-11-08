@@ -98,6 +98,9 @@ namespace Driscod
             {
                 shard.Stop();
             }
+            Objects.Clear();
+            RateLimitPathBucketMap.Clear();
+            RateLimits.Clear();
         }
 
         public BsonDocument SendJson(string pathFormat, string[] pathParams, BsonDocument doc)
@@ -190,10 +193,10 @@ namespace Driscod
             if (!table.ContainsKey(id))
             {
                 table[id] = new T();
-                table[id].DiscoveredOnShard = discoveredBy;
                 table[id].Bot = this;
             }
 
+            table[id].DiscoveredOnShard = discoveredBy;
             table[id].UpdateFromDocument(doc);
         }
 
@@ -212,7 +215,7 @@ namespace Driscod
         {
             foreach (var shard in _shards)
             {
-                shard.AddListener(
+                shard.AddListener<BsonDocument>(
                     (int)Shard.MessageType.Dispatch,
                     "READY",
                     data =>
@@ -221,7 +224,7 @@ namespace Driscod
                         CreateOrUpdateObject<User>(data["user"].AsBsonDocument);
                     });
 
-                shard.AddListener(
+                shard.AddListener<BsonDocument>(
                     (int)Shard.MessageType.Dispatch,
                     "MESSAGE_CREATE",
                     data =>
@@ -236,7 +239,7 @@ namespace Driscod
                         }
                     });
 
-                shard.AddListener(
+                shard.AddListener<BsonDocument>(
                     (int)Shard.MessageType.Dispatch,
                     new[] { "GUILD_CREATE", "GUILD_UPDATE" },
                     data =>
@@ -244,7 +247,7 @@ namespace Driscod
                         CreateOrUpdateObject<Guild>(data, discoveredBy: shard);
                     });
 
-                shard.AddListener(
+                shard.AddListener<BsonDocument>(
                     (int)Shard.MessageType.Dispatch,
                     new[] { "GUILD_DELETE" },
                     data =>
@@ -252,7 +255,7 @@ namespace Driscod
                         DeleteObject<Guild>(data["guild_id"].AsString);
                     });
 
-                shard.AddListener(
+                shard.AddListener<BsonDocument>(
                     (int)Shard.MessageType.Dispatch,
                     new[] { "CHANNEL_CREATE", "CHANNEL_UPDATE" },
                     data =>
@@ -267,7 +270,7 @@ namespace Driscod
                         }
                     });
 
-                shard.AddListener(
+                shard.AddListener<BsonDocument>(
                     (int)Shard.MessageType.Dispatch,
                     "CHANNEL_DELETE",
                     data =>
@@ -275,7 +278,7 @@ namespace Driscod
                         GetObject<Guild>(data["guild_id"].AsString).DeleteChannel(data["id"].AsString);
                     });
 
-                shard.AddListener(
+                shard.AddListener<BsonDocument>(
                     (int)Shard.MessageType.Dispatch,
                     "GUILD_EMOJIS_UPDATE",
                     data =>
@@ -284,7 +287,7 @@ namespace Driscod
                         CreateOrUpdateObject<Guild>(data, discoveredBy: shard);
                     });
 
-                shard.AddListener(
+                shard.AddListener<BsonDocument>(
                     (int)Shard.MessageType.Dispatch,
                     new[] { "GUILD_ROLE_CREATE", "GUILD_ROLE_UPDATE" },
                     data =>
@@ -292,7 +295,7 @@ namespace Driscod
                         GetObject<Guild>(data["guild_id"].AsString).UpdateRole(data["role"].AsBsonDocument);
                     });
 
-                shard.AddListener(
+                shard.AddListener<BsonDocument>(
                     (int)Shard.MessageType.Dispatch,
                     "GUILD_ROLE_DELETE",
                     data =>
@@ -300,7 +303,7 @@ namespace Driscod
                         GetObject<Guild>(data["guild_id"].AsString).DeleteRole(data["role_id"].AsString);
                     });
 
-                shard.AddListener(
+                shard.AddListener<BsonDocument>(
                     (int)Shard.MessageType.Dispatch,
                     "PRESENCE_UPDATE",
                     data =>
@@ -308,7 +311,7 @@ namespace Driscod
                         GetObject<Guild>(data["guild_id"].AsString).UpdatePresence(data);
                     });
 
-                shard.AddListener(
+                shard.AddListener<BsonDocument>(
                     (int)Shard.MessageType.Dispatch,
                     "VOICE_STATE_UPDATE",
                     data =>
