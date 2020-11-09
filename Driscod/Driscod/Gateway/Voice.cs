@@ -227,39 +227,42 @@ namespace Driscod.Gateway
                 uint timestamp = (uint)(uint.MaxValue * _random.NextDouble());
                 ushort sequence = (ushort)(ushort.MaxValue * _random.NextDouble());
 
-                while (true)
+                while (!CancellationToken.IsCancellationRequested)
                 {
                     List<byte> packet = null;
 
-                    if (QueuedRtpPayloads.Any())
+                    lock (QueuedRtpPayloads)
                     {
-                        if (!Speaking)
+                        if (QueuedRtpPayloads.Any())
                         {
-                            BeginSpeaking();
-                        }
+                            if (!Speaking)
+                            {
+                                BeginSpeaking();
+                            }
 
-                        packet = new List<byte>() { 0x80, 0x78 };
+                            packet = new List<byte>() { 0x80, 0x78 };
 
-                        if (BitConverter.IsLittleEndian)
-                        {
-                            packet.AddRange(BitConverter.GetBytes(sequence).Reverse());
-                            packet.AddRange(BitConverter.GetBytes(timestamp).Reverse());
-                            packet.AddRange(BitConverter.GetBytes((uint)Ssrc).Reverse());
+                            if (BitConverter.IsLittleEndian)
+                            {
+                                packet.AddRange(BitConverter.GetBytes(sequence).Reverse());
+                                packet.AddRange(BitConverter.GetBytes(timestamp).Reverse());
+                                packet.AddRange(BitConverter.GetBytes((uint)Ssrc).Reverse());
+                            }
+                            else
+                            {
+                                packet.AddRange(BitConverter.GetBytes(sequence));
+                                packet.AddRange(BitConverter.GetBytes(timestamp));
+                                packet.AddRange(BitConverter.GetBytes((uint)Ssrc));
+                            }
+
+                            packet.AddRange(QueuedRtpPayloads.Dequeue());
                         }
                         else
                         {
-                            packet.AddRange(BitConverter.GetBytes(sequence));
-                            packet.AddRange(BitConverter.GetBytes(timestamp));
-                            packet.AddRange(BitConverter.GetBytes((uint)Ssrc));
-                        }
-
-                        packet.AddRange(QueuedRtpPayloads.Dequeue());
-                    }
-                    else
-                    {
-                        if (Speaking)
-                        {
-                            EndSpeaking();
+                            if (Speaking)
+                            {
+                                EndSpeaking();
+                            }
                         }
                     }
 
@@ -324,7 +327,11 @@ namespace Driscod.Gateway
                 opusPacket = opusPacket.Take(opusPacketSize).ToArray();
 
                 var nonce = Enumerable.Range(1, 24).Select(x => (byte)_random.Next(byte.MinValue, byte.MaxValue)).ToArray();
-                QueuedRtpPayloads.Enqueue(StreamEncryption.Encrypt(opusPacket, nonce, SecretKey).Concat(nonce).ToArray());
+
+                lock (QueuedRtpPayloads)
+                {
+                    QueuedRtpPayloads.Enqueue(StreamEncryption.Encrypt(opusPacket, nonce, SecretKey).Concat(nonce).ToArray());
+                }
             }
 
             if (padSilence)

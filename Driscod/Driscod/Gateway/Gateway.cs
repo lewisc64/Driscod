@@ -20,6 +20,8 @@ namespace Driscod.Gateway
 
         private List<Thread> Threads { get; set; } = new List<Thread>();
 
+        private List<Action<BsonDocument>> Listeners { get; set; } = new List<Action<BsonDocument>>();
+
         protected int Sequence { get; set; }
 
         protected WebSocket Socket { get; private set; }
@@ -75,6 +77,23 @@ namespace Driscod.Gateway
                 if (DetailedLogging)
                 {
                     Logger.Debug($"[{Name}] <- {message.Message}");
+                }
+
+                var doc = BsonDocument.Parse(message.Message);
+                
+                lock (Listeners)
+                {
+                    foreach (var listener in Listeners)
+                    {
+                        try
+                        {
+                            listener.Invoke(doc);
+                        }
+                        catch
+                        {
+                            // intentionally empty
+                        }
+                    }
                 }
             });
         }
@@ -145,7 +164,7 @@ namespace Driscod.Gateway
 
         public T WaitForEvent<T>(int type, IEnumerable<string> eventNames, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
         {
-            EventHandler<MessageReceivedEventArgs> handler = null;
+            Action<BsonDocument> handler = null;
             try
             {
                 var tcs = new TaskCompletionSource<bool>();
@@ -153,7 +172,11 @@ namespace Driscod.Gateway
 
                 handler = AddListener<T>(type, eventNames, data =>
                 {
-                    if (validator == null || validator.Invoke(data))
+                    if (tcs.Task.IsCompleted)
+                    {
+                        return;
+                    }
+                    if (!tcs.Task.IsCompleted && (validator == null || validator.Invoke(data)))
                     {
                         result = data;
                         tcs.SetResult(true);
@@ -191,24 +214,22 @@ namespace Driscod.Gateway
             }
         }
 
-        public EventHandler<MessageReceivedEventArgs> AddListener<T>(int type, Action<T> handler)
+        public Action<BsonDocument> AddListener<T>(int type, Action<T> handler)
         {
             return AddListener<T>(type, new string[0], handler);
         }
 
-        public EventHandler<MessageReceivedEventArgs> AddListener<T>(int type, string eventName, Action<T> handler)
+        public Action<BsonDocument> AddListener<T>(int type, string eventName, Action<T> handler)
         {
             return AddListener<T>(type, new[] { eventName }, handler);
         }
 
-        public EventHandler<MessageReceivedEventArgs> AddListener<T>(int type, IEnumerable<string> eventNames, Action<T> handler)
+        public Action<BsonDocument> AddListener<T>(int type, IEnumerable<string> eventNames, Action<T> handler)
         {
             var handlerName = $"{type}{(eventNames.Any() ? $" ({string.Join(", ", eventNames)})" : string.Empty)}";
 
-            var listener = new EventHandler<MessageReceivedEventArgs>((sender, message) =>
+            Action<BsonDocument> listener = doc =>
             {
-                var doc = BsonDocument.Parse(message.Message);
-
                 if (doc.Contains("s") && !doc["s"].IsBsonNull)
                 {
                     Sequence = doc["s"].AsInt32;
@@ -234,8 +255,12 @@ namespace Driscod.Gateway
                         }
                     });
                 }
-            });
-            Socket.MessageReceived += listener;
+            };
+
+            lock (Listeners)
+            {
+                Listeners.Add(listener);
+            }
 
             if (DetailedLogging)
             {
@@ -245,9 +270,9 @@ namespace Driscod.Gateway
             return listener;
         }
 
-        public void RemoveListener(EventHandler<MessageReceivedEventArgs> handler)
+        public void RemoveListener(Action<BsonDocument> handler)
         {
-            Socket.MessageReceived -= handler;
+            Listeners.Remove(handler);
         }
 
         protected void ManageThread(Thread thread, string name = null)
@@ -349,8 +374,7 @@ namespace Driscod.Gateway
             {
                 if (!thread.Join(30000))
                 {
-                    Logger.Warn($"[{Name}] Thread '{thread.Name}' still alive after 30 seconds. Aborting...");
-                    thread.Abort();
+                    Logger.Error($"[{Name}] Thread '{thread.Name}' still alive after 30 seconds.");
                 }
             }
 

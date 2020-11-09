@@ -73,15 +73,19 @@ namespace Driscod.DiscordObjects
                 throw new InvalidOperationException($"Cannot connect voice to channel of type '{ChannelType}'.");
             }
 
+            var callCount = 0;
             Action sendAction = () =>
             {
-                DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
+                if (++callCount >= 2)
                 {
-                    { "guild_id", Guild.Id },
-                    { "channel_id", Id },
-                    { "self_mute", false },
-                    { "self_deaf", false },
-                });
+                    DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
+                    {
+                        { "guild_id", Guild.Id },
+                        { "channel_id", Id },
+                        { "self_mute", false },
+                        { "self_deaf", false },
+                    });
+                }
             };
 
             BsonDocument stateData = null;
