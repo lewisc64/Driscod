@@ -182,7 +182,6 @@ namespace Driscod.DiscordObjects
 
             if (doc.Contains("voice_states"))
             {
-                //"voice_states":[{"user_id":"123501794377728000","suppress":false,"session_id":"d69237a22271311c6a54642efc76ea47","self_video":false,"self_mute":false,"self_deaf":false,"mute":false,"deaf":false,"channel_id":"709048172953075762"}]
                 foreach (var voiceStateDoc in doc["voice_states"].AsBsonArray.Cast<BsonDocument>())
                 {
                     voiceStateDoc["guild_id"] = Id;

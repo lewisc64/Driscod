@@ -182,18 +182,27 @@ namespace Driscod
         {
             var type = typeof(T);
 
-            if (!Objects.ContainsKey(type))
+            Dictionary<string, DiscordObject> table;
+
+            lock (Objects)
             {
-                Objects[type] = new Dictionary<string, DiscordObject>();
+                if (!Objects.ContainsKey(type))
+                {
+                    Objects[type] = new Dictionary<string, DiscordObject>();
+                }
+
+                table = Objects[type];
             }
 
-            var table = Objects[type];
             var id = doc["id"].AsString;
 
-            if (!table.ContainsKey(id))
+            lock (table)
             {
-                table[id] = new T();
-                table[id].Bot = this;
+                if (!table.ContainsKey(id))
+                {
+                    table[id] = new T();
+                    table[id].Bot = this;
+                }
             }
 
             table[id].DiscoveredOnShard = discoveredBy;
