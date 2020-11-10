@@ -8,6 +8,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using Driscod.Gateway;
+using MongoDB.Bson.Serialization;
 
 namespace Driscod
 {
@@ -103,31 +104,43 @@ namespace Driscod
             RateLimits.Clear();
         }
 
-        public BsonDocument SendJson(string pathFormat, string[] pathParams, BsonDocument doc)
-        {
-            return SendJson(pathFormat, pathParams, doc.ToString());
-        }
-
-        public BsonDocument SendJson(string pathFormat, string[] pathParams, string json)
+        public BsonValue SendJson(HttpMethod method, string pathFormat, string[] pathParams, BsonDocument doc = null, Dictionary<string, string> queryParams = null)
         {
             if (pathFormat.StartsWith("/"))
             {
                 throw new ArgumentException($"Path cannot start with a forward slash.", nameof(pathFormat));
             }
 
-            BsonDocument output = null;
+            var json = doc?.ToString();
+
+            BsonValue output = null;
             var requestPath = string.Format(pathFormat, pathParams);
+
+            if (queryParams != null)
+            {
+                requestPath += $"?{string.Join("&", queryParams.Where(kvp => kvp.Value != null).Select(kvp => $"{kvp.Key}={kvp.Value}"))}";
+            }
 
             Func<HttpResponseMessage> requestFunc = () =>
             {
-                var response = HttpClient.PostAsync(requestPath, new StringContent(json, Encoding.UTF8, "application/json")).Result;
+                var requestMessage = new HttpRequestMessage(method, requestPath);
+
+                if (json != null)
+                {
+                    requestMessage.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                }
+
+                var response = HttpClient.SendAsync(requestMessage).Result;
+
+                Logger.Debug($"{method} to '{requestPath}': {json}");
+
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
-                    output = BsonDocument.Parse(response.Content.ReadAsStringAsync().Result);
+                    output = BsonSerializer.Deserialize<BsonValue>(response.Content.ReadAsStringAsync().Result);
                 }
                 else
                 {
-                    Logger.Error($"Failed to post json to '{requestPath}': {response.StatusCode}");
+                    Logger.Error($"Failed to send to '{requestPath}': {response.StatusCode}");
                 }
                 return response;
             };

@@ -1,4 +1,5 @@
 ﻿using System.Linq;
+using System.Net.Http;
 using MongoDB.Bson;
 
 namespace Driscod.DiscordObjects
@@ -13,14 +14,30 @@ namespace Driscod.DiscordObjects
 
         public string Avatar { get; private set; }
 
+        public Channel DmChannel
+        {
+            get
+            {
+                var result = Bot.SendJson(HttpMethod.Post, @"users/{0}/channels", new[] { Bot.User.Id }, new BsonDocument { { "recipient_id", Id } });
+
+                Bot.CreateOrUpdateObject<Channel>(result.AsBsonDocument);
+                return Bot.GetObject<Channel>(result["id"].AsString);
+            }
+        }
+
         public void SendMessage(string message)
         {
-            var result = Bot.SendJson(@"users/{0}/channels", new[] { Bot.User.Id }, new BsonDocument { { "recipient_id", Id } });
+            SendMessage(message, null);
+        }
 
-            Bot.CreateOrUpdateObject<Channel>(result);
-            var channel = Bot.GetObject<Channel>(result["id"].AsString);
+        public void SendMessage(MessageEmbed embed)
+        {
+            SendMessage(null, embed);
+        }
 
-            channel.SendMessage(message);
+        public void SendMessage(string message, MessageEmbed embed)
+        {
+            DmChannel.SendMessage(message: message, embed: embed);
         }
 
         internal override void UpdateFromDocument(BsonDocument doc)

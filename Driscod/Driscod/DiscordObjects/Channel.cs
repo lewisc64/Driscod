@@ -1,16 +1,13 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Driscod.Gateway;
 using MongoDB.Bson;
 
 namespace Driscod.DiscordObjects
 {
-    public interface IMessageable
-    {
-        void SendMessage(string message);
-    }
-    
     public enum ChannelType
     {
         Text = 0,
@@ -43,27 +40,82 @@ namespace Driscod.DiscordObjects
 
         public int Bitrate { get; private set; }
 
+        public IEnumerable<Message> Messages
+        {
+            get
+            {
+                string before = null;
+                BsonArray messages = null;
+
+                while (messages == null || messages.Any())
+                {
+                    messages = Bot.SendJson(
+                        HttpMethod.Get,
+                        Connectivity.ChannelMessagePathFormat,
+                        new[] { Id },
+                        queryParams: new Dictionary<string, string>() { { "before", before } }).AsBsonArray;
+
+                    foreach (var doc in messages.Select(x => x.AsBsonDocument))
+                    {
+                        var message = new Message
+                        {
+                            DiscoveredOnShard = DiscoveredOnShard,
+                            Bot = Bot,
+                        };
+                        message.UpdateFromDocument(doc);
+
+                        yield return message;
+                        before = message.Id;
+                    }
+                }
+            }
+        }
+
         public void SendMessage(string message)
         {
+            SendMessage(message, null);
+        }
+
+        public void SendMessage(MessageEmbed embed)
+        {
+            SendMessage(null, embed);
+        }
+
+        public void SendMessage(string message, MessageEmbed embed)
+        {
+            if (message == null && embed == null)
+            {
+                throw new ArgumentException("Both parmeters are null. At least one must be set.");
+            }
+
             if (UnmessagableChannelTypes.Contains(ChannelType))
             {
                 throw new InvalidOperationException($"Cannot send message to channel type '{ChannelType}'.");
             }
 
-            if (string.IsNullOrEmpty(message))
+            if (message == string.Empty)
             {
-                throw new ArgumentException("Message must be non-empty.", nameof(message));
+                throw new ArgumentOutOfRangeException(nameof(message), "Message must be non-empty.");
             }
 
-            if (message.Length > 2000)
+            if (message?.Length > 2000)
             {
-                throw new ArgumentException("Message must be less than or equal to 2000 characters.", nameof(message));
+                throw new ArgumentOutOfRangeException(nameof(message), "Message must be less than or equal to 2000 characters.");
             }
 
-            Bot.SendJson(Connectivity.ChannelMessagePathFormat, new[] { Id }, new BsonDocument
+            var body = new BsonDocument();
+
+            if (message != null)
             {
-                { "content", message },
-            });
+                body["content"] = message;
+            }
+
+            if (embed != null)
+            {
+                body["embed"] = embed.ToBsonDocument();
+            }
+
+            Bot.SendJson(HttpMethod.Post, Connectivity.ChannelMessagePathFormat, new[] { Id }, body);
         }
 
         public Voice ConnectVoice()

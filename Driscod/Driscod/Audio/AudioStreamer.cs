@@ -1,6 +1,5 @@
 ﻿using Concentus.Enums;
 using Concentus.Structs;
-using Driscod.Audio;
 using Sodium;
 using System;
 using System.Collections.Generic;
@@ -19,7 +18,9 @@ namespace Driscod.Audio
 
         private const string EncryptionMode = "xsalsa20_poly1305_suffix";
 
-        private Thread _loopThread;
+#pragma warning disable S1450 // Private fields only used as local variables in methods should become local variables
+        private readonly Thread _loopThread;
+#pragma warning restore S1450
 
         private UdpClient _udpClient;
 

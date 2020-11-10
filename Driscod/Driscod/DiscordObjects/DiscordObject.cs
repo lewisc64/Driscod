@@ -3,7 +3,14 @@ using MongoDB.Bson;
 
 namespace Driscod.DiscordObjects
 {
-    public abstract class DiscordObject
+    public interface IDiscordObject
+    {
+        string Id { get; set; }
+
+        Bot Bot { get; set; }
+    }
+
+    public abstract class DiscordObject : IDiscordObject
     {
         public string Id { get; set; }
 
