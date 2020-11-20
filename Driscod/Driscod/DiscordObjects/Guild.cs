@@ -65,11 +65,12 @@ namespace Driscod.DiscordObjects
             var role = Roles.FirstOrDefault(x => x.Id == doc["id"].AsString);
             if (role == null)
             {
-                role = new Role();
-                role.Bot = Bot;
-                Roles.Add(role);
+                Roles.Add(Create<Role>(Bot, doc));
             }
-            role.UpdateFromDocument(doc);
+            else
+            {
+                role.UpdateFromDocument(doc);
+            }
         }
 
         internal void UpdateVoiceState(BsonDocument doc)
@@ -83,11 +84,12 @@ namespace Driscod.DiscordObjects
             }
             if (voiceState == null)
             {
-                voiceState = new VoiceState();
-                voiceState.Bot = Bot;
-                VoiceStates.Add(voiceState);
+                VoiceStates.Add(Create<VoiceState>(Bot, doc));
             }
-            voiceState.UpdateFromDocument(doc);
+            else
+            {
+                voiceState.UpdateFromDocument(doc);
+            }
         }
 
         internal void DeleteRole(string roleId)

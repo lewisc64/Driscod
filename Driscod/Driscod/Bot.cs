@@ -195,6 +195,11 @@ namespace Driscod
         {
             var type = typeof(T);
 
+            if (typeof(IUntracked).IsAssignableFrom(type))
+            {
+                throw new ArgumentException($"DiscordObject '{type.Name}' should not be tracked.");
+            }
+
             Dictionary<string, DiscordObject> table;
 
             lock (Objects)
@@ -211,15 +216,15 @@ namespace Driscod
 
             lock (table)
             {
-                if (!table.ContainsKey(id))
+                if (table.ContainsKey(id))
                 {
-                    table[id] = new T();
-                    table[id].Bot = this;
+                    table[id].UpdateFromDocument(doc);
+                }
+                else
+                {
+                    table[id] = DiscordObject.Create<T>(this, doc, discoveredBy: discoveredBy);
                 }
             }
-
-            table[id].DiscoveredOnShard = discoveredBy;
-            table[id].UpdateFromDocument(doc);
         }
 
         private void CreateShards()
@@ -253,11 +258,7 @@ namespace Driscod
                     {
                         if (Ready)
                         {
-                            var message = new Message();
-                            message.DiscoveredOnShard = shard;
-                            message.Bot = this;
-                            message.UpdateFromDocument(data);
-                            OnMessage?.Invoke(this, message);
+                            OnMessage?.Invoke(this, DiscordObject.Create<Message>(this, data, discoveredBy: shard));
                         }
                     });
 

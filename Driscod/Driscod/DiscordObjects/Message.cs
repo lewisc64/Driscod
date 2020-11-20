@@ -54,14 +54,7 @@ namespace Driscod.DiscordObjects
                 return null;
             }
 
-            var message = new Message
-            {
-                DiscoveredOnShard = DiscoveredOnShard,
-                Bot = Bot,
-            };
-            message.UpdateFromDocument(doc);
-
-            return message;
+            return Create<Message>(Bot, doc, discoveredBy: DiscoveredOnShard);
         }
     }
 

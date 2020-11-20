@@ -330,12 +330,12 @@ namespace Driscod.Gateway
             {
                 if (!ex.Flatten().InnerExceptions.All(x => x is TaskCanceledException || x is OperationCanceledException))
                 {
-                    Logger.Error(ex, $"Exception in heart: {ex.ToString()}");
+                    Logger.Error(ex, $"Exception in heart: {ex}");
                 }
             }
             catch (Exception ex)
             {
-                Logger.Error(ex, $"Exception in heart: {ex.ToString()}");
+                Logger.Error(ex, $"Exception in heart: {ex}");
             }
             finally
             {
