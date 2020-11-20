@@ -14,11 +14,28 @@ namespace Driscod.DiscordObjects
 
         private string _channelId;
 
+        private string _content;
+
         public User Author => Bot.GetObject<User>(_authorId);
 
         public Channel Channel => Bot.GetObject<Channel>(_channelId);
 
-        public string Content { get; private set; }
+        public string Content
+        {
+            get
+            {
+                return _content;
+            }
+
+            set
+            {
+                _content = value;
+                UpdateFromDocument(Bot.SendJson(HttpMethod.Patch, Connectivity.ChannelMessagePathFormat, new[] { Channel.Id, Id }, new BsonDocument
+                {
+                    { "content", _content },
+                }).AsBsonDocument);
+            }
+        }
 
         public IEnumerable<MessageEmbed> Embeds { get; set; }
 
@@ -36,7 +53,7 @@ namespace Driscod.DiscordObjects
             Id = doc["id"].AsString;
             _authorId = doc["author"]["id"].AsString;
             _channelId = doc["channel_id"].AsString;
-            Content = doc["content"].AsString;
+            _content = doc["content"].AsString;
 
             Embeds = doc["embeds"].AsBsonArray.Select(x => BsonSerializer.Deserialize<MessageEmbed>(x.AsBsonDocument));
         }
@@ -45,7 +62,7 @@ namespace Driscod.DiscordObjects
         {
             var doc = Bot.SendJson(
                 HttpMethod.Get,
-                Connectivity.ChannelMessagePathFormat,
+                Connectivity.ChannelMessagesPathFormat,
                 new[] { Channel.Id },
                 queryParams: new Dictionary<string, string>() { { paramName, Id }, { "limit", "1" } })?.AsBsonArray.FirstOrDefault()?.AsBsonDocument;
 

@@ -7,7 +7,9 @@ namespace Driscod
     {
         public const string HttpApiEndpoint = "https://discordapp.com/api/v8";
 
-        public const string ChannelMessagePathFormat = "channels/{0}/messages";
+        public const string ChannelMessagesPathFormat = "channels/{0}/messages";
+
+        public const string ChannelMessagePathFormat = "channels/{0}/messages/{1}";
 
         public const int GatewayEventsPerMinute = 120 - 20; // slightly less for safety
 

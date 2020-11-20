@@ -51,7 +51,7 @@ namespace Driscod.DiscordObjects
                 {
                     messages = Bot.SendJson(
                         HttpMethod.Get,
-                        Connectivity.ChannelMessagePathFormat,
+                        Connectivity.ChannelMessagesPathFormat,
                         new[] { Id },
                         queryParams: new Dictionary<string, string>() { { "before", before } }).AsBsonArray;
 
@@ -115,7 +115,7 @@ namespace Driscod.DiscordObjects
                 body["embed"] = embed.ToBsonDocument();
             }
 
-            Bot.SendJson(HttpMethod.Post, Connectivity.ChannelMessagePathFormat, new[] { Id }, body);
+            Bot.SendJson(HttpMethod.Post, Connectivity.ChannelMessagesPathFormat, new[] { Id }, body);
         }
 
         public Voice ConnectVoice()
