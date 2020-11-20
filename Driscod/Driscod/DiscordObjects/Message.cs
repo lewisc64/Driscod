@@ -80,9 +80,6 @@ namespace Driscod.DiscordObjects
         [BsonElement("type"), BsonIgnoreIfNull]
         private string _typeName;
 
-        [BsonElement("title"), BsonIgnoreIfNull]
-        public string Title { get; set; }
-
         [BsonIgnore]
         public ContentType Type
         {
@@ -96,6 +93,9 @@ namespace Driscod.DiscordObjects
                 _typeName = ContentTypeNameMap[value];
             }
         }
+
+        [BsonElement("title"), BsonIgnoreIfNull]
+        public string Title { get; set; }
 
         [BsonElement("description"), BsonIgnoreIfNull]
         public string Description { get; set; }

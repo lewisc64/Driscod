@@ -1,5 +1,4 @@
 ﻿using Driscod.DiscordObjects;
-using MongoDB.Bson;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,6 +7,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using Driscod.Gateway;
+using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 
 namespace Driscod

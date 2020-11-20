@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 
@@ -16,7 +17,7 @@ namespace Driscod.Audio
 
         private static readonly Random Random = new Random();
 
-        private const string EncryptionMode = "xsalsa20_poly1305_suffix";
+        private const string EncryptionMode = "xsalsa20_poly1305";
 
 #pragma warning disable S1450 // Private fields only used as local variables in methods should become local variables
         private readonly Thread _loopThread;
@@ -28,7 +29,7 @@ namespace Driscod.Audio
 
         private int SamplesPerPacket => SampleRate * PacketIntervalMilliseconds / 1000;
 
-        private readonly Queue<byte[]> QueuedRtpPayloads = new Queue<byte[]>();
+        private readonly Queue<byte[]> QueuedOpusPackets = new Queue<byte[]>();
 
         private bool Playing { get; set; } = false;
 
@@ -40,11 +41,9 @@ namespace Driscod.Audio
 
         public byte[] EncryptionKey { get; set; }
 
-        public string Address { get; set; }
-
         public int LocalPort { get; set; }
 
-        public int Port { get; set; }
+        public IPEndPoint SocketEndPoint { get; set; }
 
         public uint Ssrc { get; set; }
 
@@ -59,8 +58,29 @@ namespace Driscod.Audio
                 if (_udpClient == null)
                 {
                     _udpClient = new UdpClient(LocalPort);
-                    _udpClient.Connect(Address, Port);
-                    Logger.Debug($"Connecting to {Address}:{Port}");
+                    _udpClient.Connect(SocketEndPoint);
+                    Logger.Debug($"Connecting to {SocketEndPoint.Address}:{SocketEndPoint.Port}");
+
+                    //byte[] ssrcBytes;
+
+                    //if (BitConverter.IsLittleEndian)
+                    //{
+                    //    ssrcBytes = BitConverter.GetBytes(Ssrc).Reverse().ToArray();
+                    //}
+                    //else
+                    //{
+                    //    ssrcBytes = BitConverter.GetBytes(Ssrc);
+                    //}
+
+                    //var datagram = new byte[] { 0, 1, 0, 70 }.Concat(ssrcBytes).Concat(Enumerable.Repeat((byte)0, 66)).ToArray();
+
+                    //var end = SocketEndPoint;
+
+                    //_udpClient.Send(datagram, datagram.Length);
+                    //var response = _udpClient.Receive(ref end);
+
+                    //var port = BitConverter.ToUInt16(response.Reverse().Take(2).ToArray(), 0);
+                    //var address = System.Text.Encoding.UTF8.GetString(response.Skip(8).TakeWhile(x => x != 0).ToArray());
                 }
                 return _udpClient;
             }
@@ -93,17 +113,15 @@ namespace Driscod.Audio
                 int opusPacketSize = encoder.Encode(samples, i, SamplesPerPacket, opusPacket, 0, opusPacket.Length);
                 opusPacket = opusPacket.Take(opusPacketSize).ToArray();
 
-                lock (QueuedRtpPayloads)
+                lock (QueuedOpusPackets)
                 {
-                    var nonce = Enumerable.Range(1, 24).Select(x => (byte)Random.Next(byte.MinValue, byte.MaxValue)).ToArray();
-
-                    chunk.Enqueue(StreamEncryption.Encrypt(opusPacket, nonce, EncryptionKey ?? throw new InvalidOperationException($"{nameof(EncryptionKey)} is null.")).Concat(nonce).ToArray());
+                    chunk.Enqueue(opusPacket);
 
                     if (chunk.Count >= 10)
                     {
                         while (chunk.Any())
                         {
-                            QueuedRtpPayloads.Enqueue(chunk.Dequeue());
+                            QueuedOpusPackets.Enqueue(chunk.Dequeue());
                         }
                     }
                 }
@@ -111,7 +129,7 @@ namespace Driscod.Audio
 
             while (chunk.Any())
             {
-                QueuedRtpPayloads.Enqueue(chunk.Dequeue());
+                QueuedOpusPackets.Enqueue(chunk.Dequeue());
             }
 
             if (queueSilence)
@@ -138,9 +156,9 @@ namespace Driscod.Audio
                 {
                     List<byte> packet = null;
 
-                    lock (QueuedRtpPayloads)
+                    lock (QueuedOpusPackets)
                     {
-                        if (QueuedRtpPayloads.Any())
+                        if (QueuedOpusPackets.Any())
                         {
                             if (!Playing)
                             {
@@ -163,7 +181,14 @@ namespace Driscod.Audio
                                 packet.AddRange(BitConverter.GetBytes(Ssrc));
                             }
 
-                            packet.AddRange(QueuedRtpPayloads.Dequeue());
+                            var opusPacket = QueuedOpusPackets.Dequeue();
+
+                            var nonce = new byte[24];
+                            packet.CopyTo(nonce, 0);
+
+                            var encryptedOpusPacket = StreamEncryption.Encrypt(opusPacket, nonce, EncryptionKey ?? throw new InvalidOperationException($"{nameof(EncryptionKey)} is null."));
+
+                            packet.AddRange(encryptedOpusPacket);
                         }
                         else
                         {

@@ -38,7 +38,7 @@ namespace Driscod.Gateway
 
         private IEnumerable<string> Modes { get; set; }
 
-        private string EncryptionMode => "xsalsa20_poly1305_suffix";
+        private string EncryptionMode => "xsalsa20_poly1305";
 
         private uint Ssrc { get; set; }
 
@@ -136,8 +136,7 @@ namespace Driscod.Gateway
 
                 AudioStreamer = new AudioStreamer(CancellationToken.Token)
                 {
-                    Address = UdpSocketIpAddress,
-                    Port = UdpSocketPort,
+                    SocketEndPoint = GetUdpEndpoint(),
                     LocalPort = LocalPort,
                     Ssrc = Ssrc,
                     EncryptionKey = SecretKey,
@@ -147,7 +146,8 @@ namespace Driscod.Gateway
 
                 Thread.Sleep(5000);
 
-                AudioStreamer.SendAudio(new WaveAudioFile(@"E:\assorted\music\games\TLoZ\TLoZ_MM_Clock_Town_Day_3.wav"));
+                //AudioStreamer.SendAudio(new WaveAudioFile(@"E:\assorted\music\games\TLoZ\TLoZ_MM_Clock_Town_Day_3.wav"));
+                AudioStreamer.SendAudio(new WaveAudioFile(@"C:\Users\pc\Desktop\audio-2012-2-28-483_192746_1\talk.wav"));
             });
         }
 
