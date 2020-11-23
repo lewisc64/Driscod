@@ -13,7 +13,7 @@ namespace Driscod.Audio
 
         private Bot Bot { get; set; }
 
-        public bool Stale => Voice.Running;
+        public bool Stale => !Voice.Running;
 
         public Channel Channel => Bot.GetObject<Channel>(_channelId);
 
