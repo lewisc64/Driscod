@@ -1,6 +1,5 @@
 ﻿using Concentus.Enums;
 using Concentus.Structs;
-using Sodium;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -18,9 +17,9 @@ namespace Driscod.Audio
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
-        private static readonly Random Random = new Random();
+        private static readonly string[] SupportedEncryptionModes = new[] { "xsalsa20_poly1305" };
 
-        private const string EncryptionMode = "xsalsa20_poly1305";
+        private static readonly Random Random = new Random();
 
 #pragma warning disable S1450 // Private fields only used as local variables in methods should become local variables
         private readonly Thread _loopThread;
@@ -44,15 +43,17 @@ namespace Driscod.Audio
 
         public byte[] EncryptionKey { get; set; }
 
+        public string EncryptionMode { get; set; } = "xsalsa20_poly1305";
+
         public int LocalPort { get; set; }
 
         public IPEndPoint SocketEndPoint { get; set; }
 
         public uint Ssrc { get; set; }
 
-        public Action AudioStartCallback { get; set; }
+        public event EventHandler OnAudioStart;
 
-        public Action AudioStopCallback { get; set; }
+        public event EventHandler OnAudioStop;
 
         private UdpClient UdpClient
         {
@@ -83,8 +84,6 @@ namespace Driscod.Audio
 
         public void SendAudio(float[] samples, bool queueSilence = true)
         {
-            Logger.Info("Queuing audio");
-
             var encoder = OpusEncoder.Create(SampleRate, Channels, OpusApplication.OPUS_APPLICATION_AUDIO);
 
             var chunk = new Queue<byte[]>();
@@ -132,11 +131,13 @@ namespace Driscod.Audio
                 uint timestamp = 0;
                 ushort sequence = 0;
 
+                var nextPacketTime = Environment.TickCount;
+
                 var stopwatch = Stopwatch.StartNew();
 
                 while (!_cancellationToken.IsCancellationRequested)
                 {
-                    List<byte> packet = null;
+                    byte[] packet = null;
 
                     lock (QueuedOpusPackets)
                     {
@@ -145,41 +146,17 @@ namespace Driscod.Audio
                             if (!Playing)
                             {
                                 Playing = true;
-                                AudioStartCallback?.Invoke();
+                                OnAudioStart.Invoke(this, null);
                             }
 
-                            packet = new List<byte>() { 0x80, 0x78 };
-
-                            if (BitConverter.IsLittleEndian)
-                            {
-                                packet.AddRange(BitConverter.GetBytes(sequence).Reverse());
-                                packet.AddRange(BitConverter.GetBytes(timestamp).Reverse());
-                                packet.AddRange(BitConverter.GetBytes(Ssrc).Reverse());
-                            }
-                            else
-                            {
-                                packet.AddRange(BitConverter.GetBytes(sequence));
-                                packet.AddRange(BitConverter.GetBytes(timestamp));
-                                packet.AddRange(BitConverter.GetBytes(Ssrc));
-                            }
-
-                            var opusPacket = QueuedOpusPackets.Dequeue();
-
-                            var nonce = new byte[24];
-                            packet.CopyTo(nonce, 0);
-
-                            var encryptedOpusPacket = Encrypt(opusPacket, EncryptionKey, nonce);
-
-                            // var encryptedOpusPacket = Sodium(opusPacket, nonce, EncryptionKey ?? throw new InvalidOperationException($"{nameof(EncryptionKey)} is null."));
-
-                            packet.AddRange(encryptedOpusPacket);
+                            packet = AssemblePacket(QueuedOpusPackets.Dequeue(), sequence, timestamp);
                         }
                         else
                         {
                             if (Playing)
                             {
                                 Playing = false;
-                                AudioStopCallback?.Invoke();
+                                OnAudioStop.Invoke(this, null);
                             }
                         }
                     }
@@ -192,7 +169,7 @@ namespace Driscod.Audio
 
                     if (packet != null)
                     {
-                        UdpClient.Send(packet.ToArray(), packet.Count);
+                        UdpClient.Send(packet, packet.Length);
                     }
 
                     sequence++;
@@ -207,8 +184,37 @@ namespace Driscod.Audio
 
         private void QueueSilence()
         {
-            Logger.Info("Silence inbound");
             SendAudio(Enumerable.Repeat(0f, SamplesPerPacket * 10).ToArray(), queueSilence: false);
+        }
+
+        private byte[] AssemblePacket(byte[] opusData, ushort sequence, uint timestamp)
+        {
+            var packet = new List<byte>() { 0x80, 0x78 };
+
+            if (BitConverter.IsLittleEndian)
+            {
+                packet.AddRange(BitConverter.GetBytes(sequence).Reverse());
+                packet.AddRange(BitConverter.GetBytes(timestamp).Reverse());
+                packet.AddRange(BitConverter.GetBytes(Ssrc).Reverse());
+            }
+            else
+            {
+                packet.AddRange(BitConverter.GetBytes(sequence));
+                packet.AddRange(BitConverter.GetBytes(timestamp));
+                packet.AddRange(BitConverter.GetBytes(Ssrc));
+            }
+
+            var nonce = new byte[24];
+            packet.CopyTo(nonce, 0);
+
+            if (!SupportedEncryptionModes.Contains(EncryptionMode))
+            {
+                throw new InvalidOperationException($"Encryption mode '{EncryptionMode}' is not supported.");
+            }
+
+            packet.AddRange(Encrypt(opusData, EncryptionKey, nonce));
+
+            return packet.ToArray();
         }
 
         private byte[] Encrypt(byte[] bytes, byte[] key, byte[] nonce)
@@ -218,14 +224,14 @@ namespace Driscod.Audio
 
             salsa.Init(true, new ParametersWithIV(new KeyParameter(key), nonce));
 
-            byte[] sk = new byte[key.Length];
-            salsa.ProcessBytes(sk, 0, key.Length, sk, 0);
+            byte[] subKey = new byte[key.Length];
+            salsa.ProcessBytes(subKey, 0, key.Length, subKey, 0);
 
             byte[] output = new byte[bytes.Length + poly.GetMacSize()];
 
             salsa.ProcessBytes(bytes, 0, bytes.Length, output, poly.GetMacSize());
 
-            poly.Init(new KeyParameter(sk));
+            poly.Init(new KeyParameter(subKey));
             poly.BlockUpdate(output, poly.GetMacSize(), bytes.Length);
             poly.DoFinal(output, 0);
 

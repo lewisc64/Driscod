@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
+using Driscod.Audio;
 using MongoDB.Bson;
 
 namespace Driscod.DiscordObjects
@@ -12,6 +13,8 @@ namespace Driscod.DiscordObjects
 
         private readonly List<string> _memberIds = new List<string>();
 
+        internal object VoiceLock { get; } = new object();
+
         public List<Presence> Presences { get; private set; } = new List<Presence>();
 
         public List<Role> Roles { get; private set; } = new List<Role>();
@@ -23,6 +26,8 @@ namespace Driscod.DiscordObjects
         public IEnumerable<User> Members => _memberIds.Select(x => Bot.GetObject<User>(x));
 
         public IEnumerable<Channel> Channels => _channelIds.Select(x => Bot.GetObject<Channel>(x));
+
+        public VoiceConnection VoiceConnection { get; set; }
 
         public IEnumerable<Channel> TextChannels => Channels.Where(x => x.ChannelType == ChannelType.Text).OrderBy(x => x.Position);
 

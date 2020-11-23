@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
+using Driscod.Audio;
 using Driscod.Gateway;
 using MongoDB.Bson;
 
@@ -118,61 +119,80 @@ namespace Driscod.DiscordObjects
             Bot.SendJson(HttpMethod.Post, Connectivity.ChannelMessagesPathFormat, new[] { Id }, body);
         }
 
-        public Voice ConnectVoice()
+        public VoiceConnection ConnectVoice()
         {
             if (ChannelType != ChannelType.Voice)
             {
                 throw new InvalidOperationException($"Cannot connect voice to channel of type '{ChannelType}'.");
             }
 
-            var callCount = 0;
-            Action sendAction = () =>
+            lock (Guild.VoiceLock)
             {
-                if (++callCount >= 2)
+                Guild.VoiceConnection?.DisposeIfStale();
+
+                if (Guild.VoiceConnection != null)
                 {
-                    DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
+                    throw new InvalidOperationException("Already connected to voice for this guild.");
+                }
+
+                var callCount = 0;
+                Action sendAction = () =>
+                {
+                    if (++callCount >= 2)
+                    {
+                        DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
                     {
                         { "guild_id", Guild.Id },
                         { "channel_id", Id },
                         { "self_mute", false },
                         { "self_deaf", false },
                     });
-                }
-            };
+                    }
+                };
 
-            BsonDocument stateData = null;
-            BsonDocument serverData = null;
+                BsonDocument stateData = null;
+                BsonDocument serverData = null;
 
-            Task.WhenAll(
-                Task.Run(() =>
-                {
-                    stateData = DiscoveredOnShard.WaitForEvent<BsonDocument>(
-                        (int)Shard.MessageType.Dispatch,
-                        "VOICE_STATE_UPDATE",
-                        listenerCreateCallback: sendAction,
-                        validator: data =>
-                        {
-                            return data["guild_id"].AsString == Guild.Id && data["channel_id"] == Id && data["user_id"].AsString == Bot.User.Id;
-                        },
-                        timeout: TimeSpan.FromSeconds(10));
-                }),
-                Task.Run(() =>
-                {
-                    serverData = DiscoveredOnShard.WaitForEvent<BsonDocument>(
-                        (int)Shard.MessageType.Dispatch,
-                        "VOICE_SERVER_UPDATE",
-                        listenerCreateCallback: sendAction,
-                        validator: data =>
-                        {
-                            return data["guild_id"].AsString == Guild.Id;
-                        },
-                        timeout: TimeSpan.FromSeconds(10));
-                })).Wait();
+                Task.WhenAll(
+                    Task.Run(() =>
+                    {
+                        stateData = DiscoveredOnShard.WaitForEvent<BsonDocument>(
+                            (int)Shard.MessageType.Dispatch,
+                            "VOICE_STATE_UPDATE",
+                            listenerCreateCallback: sendAction,
+                            validator: data =>
+                            {
+                                return data["guild_id"].AsString == Guild.Id && data["channel_id"] == Id && data["user_id"].AsString == Bot.User.Id;
+                            },
+                            timeout: TimeSpan.FromSeconds(10));
+                    }),
+                    Task.Run(() =>
+                    {
+                        serverData = DiscoveredOnShard.WaitForEvent<BsonDocument>(
+                            (int)Shard.MessageType.Dispatch,
+                            "VOICE_SERVER_UPDATE",
+                            listenerCreateCallback: sendAction,
+                            validator: data =>
+                            {
+                                return data["guild_id"].AsString == Guild.Id;
+                            },
+                            timeout: TimeSpan.FromSeconds(10));
+                    })).Wait();
 
-            var voice = new Voice(Connectivity.FormatVoiceSocketEndpoint(serverData["endpoint"].AsString), Guild.Id, Bot.User.Id, stateData["session_id"].AsString, serverData["token"].AsString);
-            voice.Start();
+                var voiceGateway = new Voice(
+                    DiscoveredOnShard,
+                    Connectivity.FormatVoiceSocketEndpoint(serverData["endpoint"].AsString),
+                    Guild.Id,
+                    Bot.User.Id,
+                    stateData["session_id"].AsString,
+                    serverData["token"].AsString);
 
-            return voice;
+                voiceGateway.Start();
+
+                Guild.VoiceConnection = new VoiceConnection(this, voiceGateway);
+            }
+
+            return Guild.VoiceConnection;
         }
 
         internal override void UpdateFromDocument(BsonDocument doc)

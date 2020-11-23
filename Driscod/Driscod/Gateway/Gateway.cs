@@ -38,6 +38,8 @@ namespace Driscod.Gateway
 
         public abstract string Name { get; }
 
+        public bool Running => Socket.State == WebSocketState.Open;
+
         protected Gateway(string url)
         {
             Socket = new WebSocket(url);
@@ -130,26 +132,6 @@ namespace Driscod.Gateway
         {
             Stop();
             Start();
-        }
-
-        public void Send(int type, BsonValue data = null)
-        {
-            var response = new BsonDocument
-            {
-                { "op", type },
-            };
-            if (data != null)
-            {
-                response["d"] = data;
-            }
-            RateLimitWait(() =>
-            {
-                if (DetailedLogging)
-                {
-                    Logger.Debug($"[{Name}] -> {response.ToString()}");
-                }
-                Socket.Send(response.ToString());
-            });
         }
 
         public T WaitForEvent<T>(int type, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
@@ -273,6 +255,26 @@ namespace Driscod.Gateway
         public void RemoveListener(Action<BsonDocument> handler)
         {
             Listeners.Remove(handler);
+        }
+
+        internal void Send(int type, BsonValue data = null)
+        {
+            var response = new BsonDocument
+            {
+                { "op", type },
+            };
+            if (data != null)
+            {
+                response["d"] = data;
+            }
+            RateLimitWait(() =>
+            {
+                if (DetailedLogging)
+                {
+                    Logger.Debug($"[{Name}] -> {response.ToString()}");
+                }
+                Socket.Send(response.ToString());
+            });
         }
 
         protected void ManageThread(Thread thread, string name = null)

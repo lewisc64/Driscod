@@ -7,10 +7,11 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Driscod.Gateway
 {
-    public class Voice : Gateway
+    internal class Voice : Gateway
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
@@ -48,6 +49,8 @@ namespace Driscod.Gateway
 
         private AudioStreamer AudioStreamer { get; set; }
 
+        private Shard ParentShard { get; set; }
+
         protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4006, 4014 }; // Should not reconnect upon forced disconnection.
 
         public override string Name => $"VOICE-{_sessionId}";
@@ -56,13 +59,15 @@ namespace Driscod.Gateway
 
         public bool Speaking { get; private set; } = false;
 
-        public Voice(string url, string serverId, string userId, string sessionId, string token)
+        public Voice(Shard parentShard, string url, string serverId, string userId, string sessionId, string token)
             : base(url)
         {
             _serverId = serverId;
             _userId = userId;
             _sessionId = sessionId;
             _token = token;
+
+            ParentShard = parentShard;
 
             Socket.Opened += (a, b) =>
             {
@@ -88,8 +93,15 @@ namespace Driscod.Gateway
             {
                 UdpSocketIpAddress = data["ip"].AsString;
                 UdpSocketPort = (ushort)data["port"].AsInt32;
-                Modes = data["modes"].AsBsonArray.Cast<string>();
+                Modes = data["modes"].AsBsonArray.Select(x => x.AsString);
                 Ssrc = (uint)data["ssrc"].AsInt32;
+
+                if (!Modes.Contains(EncryptionMode))
+                {
+                    Logger.Fatal($"[{Name}] Encryption mode '{EncryptionMode}' not listed in gateway response.");
+                    Stop();
+                    return;
+                }
 
                 byte[] ssrcBytes;
 
@@ -132,7 +144,6 @@ namespace Driscod.Gateway
             AddListener<BsonDocument>((int)MessageType.SessionDescription, data =>
             {
                 SecretKey = data["secret_key"].AsBsonArray.Select(x => (byte)x.AsInt32).ToArray();
-                Ready = true;
 
                 AudioStreamer = new AudioStreamer(CancellationToken.Token)
                 {
@@ -140,14 +151,61 @@ namespace Driscod.Gateway
                     LocalPort = LocalPort,
                     Ssrc = Ssrc,
                     EncryptionKey = SecretKey,
-                    AudioStartCallback = BeginSpeaking,
-                    AudioStopCallback = EndSpeaking,
+                    EncryptionMode = EncryptionMode,
                 };
 
-                Thread.Sleep(5000);
+                AudioStreamer.OnAudioStart += (a, b) =>
+                {
+                    BeginSpeaking();
+                };
 
-                AudioStreamer.SendAudio(new WaveAudioFile(@"E:\assorted\music\games\TLoZ\TLoZ_MM_Clock_Town_Day_3.wav"));
+                AudioStreamer.OnAudioStop += (a, b) =>
+                {
+                    EndSpeaking();
+                };
+
+                Ready = true;
             });
+        }
+
+        public async Task Play(IAudioSource audioSource)
+        {
+            while (!Ready)
+            {
+                Thread.Sleep(200);
+            }
+
+            var tcs = new TaskCompletionSource<bool>();
+
+            EventHandler handler = (a, b) =>
+            {
+                tcs.SetResult(true);
+            };
+
+            AudioStreamer.OnAudioStop += handler;
+
+            try
+            {
+                AudioStreamer.SendAudio(audioSource);
+                await tcs.Task;
+            }
+            finally
+            {
+                AudioStreamer.OnAudioStop -= handler;
+            }
+        }
+
+        public override void Stop()
+        {
+            ParentShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
+            {
+                { "guild_id", _serverId },
+                { "channel_id", BsonNull.Value },
+                { "self_mute", false },
+                { "self_deaf", false },
+            });
+
+            base.Stop();
         }
 
         private void BeginSpeaking()
@@ -159,7 +217,6 @@ namespace Driscod.Gateway
                 { "speaking", 1 },
             });
             Speaking = true;
-            Logger.Info($"[{Name}] Speaking.");
         }
 
         private void EndSpeaking()
@@ -171,7 +228,6 @@ namespace Driscod.Gateway
                 { "speaking", 0 },
             });
             Speaking = false;
-            Logger.Info($"[{Name}] Stopped speaking.");
         }
 
         private IPEndPoint GetUdpEndpoint()

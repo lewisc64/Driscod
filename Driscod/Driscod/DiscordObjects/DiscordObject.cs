@@ -24,7 +24,7 @@ namespace Driscod.DiscordObjects
 
         internal abstract void UpdateFromDocument(BsonDocument doc);
 
-        public static T Create<T>(Bot bot, BsonDocument doc, Shard discoveredBy = null)
+        internal static T Create<T>(Bot bot, BsonDocument doc, Shard discoveredBy = null)
             where T : DiscordObject, new()
         {
             var obj = new T();

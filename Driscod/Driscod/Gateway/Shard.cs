@@ -4,7 +4,7 @@ using System.Collections.Generic;
 
 namespace Driscod.Gateway
 {
-    public class Shard : Gateway
+    internal class Shard : Gateway
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
