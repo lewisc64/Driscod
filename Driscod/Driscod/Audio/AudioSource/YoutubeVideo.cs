@@ -10,7 +10,7 @@ namespace Driscod.Audio
 
         public YoutubeVideo(string videoId)
         {
-            _videoId = videoId ?? throw new ArgumentNullException(nameof(videoId), $"You must specify a YouTube video ID.");
+            _videoId = videoId ?? throw new ArgumentNullException(nameof(videoId), $"You must specify a YouTube video ID or URL.");
         }
 
         public float[] GetSamples(int sampleRate, int channels)

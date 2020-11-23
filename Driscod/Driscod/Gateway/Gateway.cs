@@ -124,7 +124,7 @@ namespace Driscod.Gateway
             Socket.Close("Internal stop call.");
             while (Socket.State != WebSocketState.Closed || Threads.Any())
             {
-                // intentionally empty
+                Thread.Sleep(200);
             }
         }
 
