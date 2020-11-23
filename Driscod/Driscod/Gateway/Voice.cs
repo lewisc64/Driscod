@@ -146,8 +146,7 @@ namespace Driscod.Gateway
 
                 Thread.Sleep(5000);
 
-                //AudioStreamer.SendAudio(new WaveAudioFile(@"E:\assorted\music\games\TLoZ\TLoZ_MM_Clock_Town_Day_3.wav"));
-                AudioStreamer.SendAudio(new WaveAudioFile(@"C:\Users\pc\Desktop\audio-2012-2-28-483_192746_1\talk.wav"));
+                AudioStreamer.SendAudio(new WaveAudioFile(@"E:\assorted\music\games\TLoZ\TLoZ_MM_Clock_Town_Day_3.wav"));
             });
         }
 

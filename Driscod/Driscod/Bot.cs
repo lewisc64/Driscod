@@ -61,6 +61,10 @@ namespace Driscod
 
         public event EventHandler<Message> OnMessage;
 
+        public event EventHandler<Message> OnMessageEdit;
+
+        public event EventHandler<(Channel Channel, User User)> OnTyping;
+
         public Bot(string token, int intents = (int)Intents.All)
         {
             _token = token ?? throw new ArgumentNullException(nameof(token), "Token cannot be null.");
@@ -259,6 +263,28 @@ namespace Driscod
                         if (Ready)
                         {
                             OnMessage?.Invoke(this, DiscordObject.Create<Message>(this, data, discoveredBy: shard));
+                        }
+                    });
+
+                shard.AddListener<BsonDocument>(
+                    (int)Shard.MessageType.Dispatch,
+                    "MESSAGE_UPDATE",
+                    data =>
+                    {
+                        if (Ready)
+                        {
+                            OnMessageEdit?.Invoke(this, DiscordObject.Create<Message>(this, data, discoveredBy: shard));
+                        }
+                    });
+
+                shard.AddListener<BsonDocument>(
+                    (int)Shard.MessageType.Dispatch,
+                    "TYPING_START",
+                    data =>
+                    {
+                        if (Ready)
+                        {
+                            OnTyping?.Invoke(this, (GetObject<Channel>(data["channel_id"].AsString), GetObject<User>(data["user_id"].AsString)));
                         }
                     });
 

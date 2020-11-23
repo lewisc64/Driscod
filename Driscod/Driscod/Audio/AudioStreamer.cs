@@ -8,6 +8,9 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using Org.BouncyCastle.Crypto.Engines;
+using Org.BouncyCastle.Crypto.Macs;
+using Org.BouncyCastle.Crypto.Parameters;
 
 namespace Driscod.Audio
 {
@@ -60,27 +63,6 @@ namespace Driscod.Audio
                     _udpClient = new UdpClient(LocalPort);
                     _udpClient.Connect(SocketEndPoint);
                     Logger.Debug($"Connecting to {SocketEndPoint.Address}:{SocketEndPoint.Port}");
-
-                    //byte[] ssrcBytes;
-
-                    //if (BitConverter.IsLittleEndian)
-                    //{
-                    //    ssrcBytes = BitConverter.GetBytes(Ssrc).Reverse().ToArray();
-                    //}
-                    //else
-                    //{
-                    //    ssrcBytes = BitConverter.GetBytes(Ssrc);
-                    //}
-
-                    //var datagram = new byte[] { 0, 1, 0, 70 }.Concat(ssrcBytes).Concat(Enumerable.Repeat((byte)0, 66)).ToArray();
-
-                    //var end = SocketEndPoint;
-
-                    //_udpClient.Send(datagram, datagram.Length);
-                    //var response = _udpClient.Receive(ref end);
-
-                    //var port = BitConverter.ToUInt16(response.Reverse().Take(2).ToArray(), 0);
-                    //var address = System.Text.Encoding.UTF8.GetString(response.Skip(8).TakeWhile(x => x != 0).ToArray());
                 }
                 return _udpClient;
             }
@@ -103,7 +85,7 @@ namespace Driscod.Audio
         {
             Logger.Info("Queuing audio");
 
-            OpusEncoder encoder = OpusEncoder.Create(SampleRate, Channels, OpusApplication.OPUS_APPLICATION_AUDIO);
+            var encoder = OpusEncoder.Create(SampleRate, Channels, OpusApplication.OPUS_APPLICATION_AUDIO);
 
             var chunk = new Queue<byte[]>();
 
@@ -186,7 +168,9 @@ namespace Driscod.Audio
                             var nonce = new byte[24];
                             packet.CopyTo(nonce, 0);
 
-                            var encryptedOpusPacket = StreamEncryption.Encrypt(opusPacket, nonce, EncryptionKey ?? throw new InvalidOperationException($"{nameof(EncryptionKey)} is null."));
+                            var encryptedOpusPacket = Encrypt(opusPacket, EncryptionKey, nonce);
+
+                            // var encryptedOpusPacket = Sodium(opusPacket, nonce, EncryptionKey ?? throw new InvalidOperationException($"{nameof(EncryptionKey)} is null."));
 
                             packet.AddRange(encryptedOpusPacket);
                         }
@@ -204,11 +188,12 @@ namespace Driscod.Audio
                     {
                         // intentionally empty
                     }
+                    stopwatch.Restart();
+
                     if (packet != null)
                     {
-                        UdpClient.SendAsync(packet.ToArray(), packet.Count);
+                        UdpClient.Send(packet.ToArray(), packet.Count);
                     }
-                    stopwatch.Restart();
 
                     sequence++;
                     timestamp += (uint)SamplesPerPacket;
@@ -224,6 +209,27 @@ namespace Driscod.Audio
         {
             Logger.Info("Silence inbound");
             SendAudio(Enumerable.Repeat(0f, SamplesPerPacket * 10).ToArray(), queueSilence: false);
+        }
+
+        private byte[] Encrypt(byte[] bytes, byte[] key, byte[] nonce)
+        {
+            var salsa = new XSalsa20Engine();
+            var poly = new Poly1305();
+
+            salsa.Init(true, new ParametersWithIV(new KeyParameter(key), nonce));
+
+            byte[] sk = new byte[key.Length];
+            salsa.ProcessBytes(sk, 0, key.Length, sk, 0);
+
+            byte[] output = new byte[bytes.Length + poly.GetMacSize()];
+
+            salsa.ProcessBytes(bytes, 0, bytes.Length, output, poly.GetMacSize());
+
+            poly.Init(new KeyParameter(sk));
+            poly.BlockUpdate(output, poly.GetMacSize(), bytes.Length);
+            poly.DoFinal(output, 0);
+
+            return output;
         }
     }
 }

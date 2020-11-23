@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using MongoDB.Bson;
 
@@ -6,7 +7,11 @@ namespace Driscod.DiscordObjects
 {
     public class User : DiscordObject, IMessageable
     {
-        public Presence Presence => Bot.Guilds.FirstOrDefault(x => x.Members.Any(y => y.Id == Id))?.Presences.FirstOrDefault(x => x.User == this);
+        public IEnumerable<Presence> Presences => Bot.Guilds
+            .Where(x => x.Members.Contains(this))
+            .Select(x => x.Presences.FirstOrDefault(x => x.User == this));
+
+        public Presence Presence => Presences.FirstOrDefault();
 
         public string Username { get; private set; }
 
