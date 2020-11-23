@@ -59,6 +59,8 @@ namespace Driscod.Gateway
 
         public bool Speaking { get; private set; } = false;
 
+        public event EventHandler OnStop;
+
         public Voice(Shard parentShard, string url, string serverId, string userId, string sessionId, string token)
             : base(url)
         {
@@ -80,6 +82,11 @@ namespace Driscod.Gateway
                     Send((int)MessageType.Identify, Identity);
                     Ready = false;
                 }
+            };
+
+            Socket.Closed += (a, b) =>
+            {
+                OnStop.Invoke(this, null);
             };
 
             AddListener<BsonDocument>((int)MessageType.Hello, data =>

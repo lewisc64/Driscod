@@ -1,6 +1,7 @@
 ﻿using Driscod.DiscordObjects;
 using Driscod.Gateway;
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Driscod.Audio
@@ -25,6 +26,21 @@ namespace Driscod.Audio
 
             Bot = channel.Bot;
             Voice = voice;
+
+            Voice.OnStop += (a, b) =>
+            {
+                Disconnect();
+            };
+
+            if (!Voice.Running)
+            {
+                Voice.Start();
+            }
+
+            while (!Voice.Ready)
+            {
+                Thread.Sleep(200);
+            }
         }
 
         public async Task Play(IAudioSource audioSource)
@@ -38,13 +54,21 @@ namespace Driscod.Audio
             Play(audioSource).Wait();
         }
 
-        public void Dispose()
+        public void Disconnect()
         {
             lock (Guild.VoiceLock)
             {
-                Voice.Stop();
+                if (Voice.Running)
+                {
+                    Voice.Stop();
+                }
                 Guild.VoiceConnection = null;
             }
+        }
+
+        public void Dispose()
+        {
+            Disconnect();
         }
 
         internal void DisposeIfStale()

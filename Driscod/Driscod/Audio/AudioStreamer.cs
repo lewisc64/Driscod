@@ -84,9 +84,10 @@ namespace Driscod.Audio
 
         public void SendAudio(float[] samples, bool queueSilence = true)
         {
-            var encoder = OpusEncoder.Create(SampleRate, Channels, OpusApplication.OPUS_APPLICATION_AUDIO);
-
+            const int ChunkSize = 16;
             var chunk = new Queue<byte[]>();
+
+            var encoder = OpusEncoder.Create(SampleRate, Channels, OpusApplication.OPUS_APPLICATION_AUDIO);
 
             for (var i = 0; i < samples.Length - SamplesPerPacket * Channels; i += SamplesPerPacket * Channels)
             {
@@ -98,7 +99,7 @@ namespace Driscod.Audio
                 {
                     chunk.Enqueue(opusPacket);
 
-                    if (chunk.Count >= 10)
+                    if (chunk.Count >= ChunkSize)
                     {
                         while (chunk.Any())
                         {
@@ -122,6 +123,14 @@ namespace Driscod.Audio
         public void SendAudio(IAudioSource audioSource)
         {
             SendAudio(audioSource.GetSamples(SampleRate, Channels));
+        }
+
+        public void ClearAudio()
+        {
+            lock (QueuedOpusPackets)
+            {
+                QueuedOpusPackets.Clear();
+            }
         }
 
         private void AudioLoop()
@@ -161,16 +170,22 @@ namespace Driscod.Audio
                         }
                     }
 
-                    while (stopwatch.Elapsed.TotalMilliseconds < PacketIntervalMilliseconds)
-                    {
-                        // intentionally empty
-                    }
-                    stopwatch.Restart();
-
                     if (packet != null)
                     {
-                        UdpClient.Send(packet, packet.Length);
+                        while (stopwatch.Elapsed.TotalMilliseconds < PacketIntervalMilliseconds)
+                        {
+                            // intentionally empty
+                        }
+
+                        UdpClient.SendAsync(packet, packet.Length);
                     }
+                    else
+                    {
+                        // use inaccurate timing when no packets are being sent to save CPU.
+                        Thread.Sleep(PacketIntervalMilliseconds - (int)stopwatch.Elapsed.TotalMilliseconds);
+                    }
+
+                    stopwatch.Restart();
 
                     sequence++;
                     timestamp += (uint)SamplesPerPacket;
@@ -179,6 +194,15 @@ namespace Driscod.Audio
             catch (Exception ex)
             {
                 Logger.Error(ex, $"Exception in audio loop: {ex}");
+            }
+            finally
+            {
+                ClearAudio();
+                if (Playing)
+                {
+                    Playing = false;
+                    OnAudioStop.Invoke(this, null);
+                }
             }
         }
 

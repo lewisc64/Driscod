@@ -3,15 +3,14 @@ using NAudio.Wave.SampleProviders;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 
 namespace Driscod.Audio
 {
-    public class WaveAudioFile : IAudioSource
+    public class AudioFile : IAudioSource
     {
         private readonly string _path;
 
-        public WaveAudioFile(string path)
+        public AudioFile(string path)
         {
             _path = path ?? throw new ArgumentNullException(nameof(path), $"'{nameof(path)}' cannot be null.");
         }
@@ -25,9 +24,9 @@ namespace Driscod.Audio
 
             var samples = new List<float>();
 
-            using (var reader = new AudioFileReader(_path))
+            using (var reader = new MediaFoundationReader(_path))
             {
-                ISampleProvider sampler = new WdlResamplingSampleProvider(reader, sampleRate);
+                ISampleProvider sampler = new WdlResamplingSampleProvider(reader.ToSampleProvider(), sampleRate);
 
                 switch (channels)
                 {

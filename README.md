@@ -35,7 +35,7 @@ Bot.OnMessage += (_, message) =>
         var channel = message.Channel.Guild.VoiceStates.First(x => x.User == message.Author).Channel;
         using (var connection = channel.ConnectVoice())
         {
-            connection.PlaySync(new WaveAudioFile(FILE_PATH));
+            connection.PlaySync(new AudioFile(FILE_PATH));
         }
     }
 };
@@ -62,7 +62,7 @@ Bot.OnMessage += (_, message) =>
 {
     if (message.Content == "play")
     {
-        message.Channel.Guild.VoiceConnection.PlaySync(new WaveAudioFile(FILE_PATH));
+        message.Channel.Guild.VoiceConnection.PlaySync(new YoutubeVideo(VIDEO_ID));
     }
 };
 ```

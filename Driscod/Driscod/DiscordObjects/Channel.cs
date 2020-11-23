@@ -187,8 +187,6 @@ namespace Driscod.DiscordObjects
                     stateData["session_id"].AsString,
                     serverData["token"].AsString);
 
-                voiceGateway.Start();
-
                 Guild.VoiceConnection = new VoiceConnection(this, voiceGateway);
             }
 
