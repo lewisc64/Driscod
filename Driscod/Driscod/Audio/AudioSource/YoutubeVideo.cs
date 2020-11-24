@@ -1,8 +1,8 @@
 ﻿using System;
-using System.Net.Http;
 using System.Web;
 using System.Linq;
-using MongoDB.Bson;
+using YoutubeExplode;
+using YoutubeExplode.Videos.Streams;
 
 namespace Driscod.Audio
 {
@@ -33,24 +33,11 @@ namespace Driscod.Audio
 
         private void FetchStreamUrl()
         {
-            var client = new HttpClient();
+            var youtube = new YoutubeClient();
+            var streamManifest = youtube.Videos.Streams.GetManifestAsync(_videoId).Result;
+            var streamInfo = streamManifest.GetAudioOnly().WithHighestBitrate();
 
-            var response = client.GetAsync(string.Format(Connectivity.YoutubeVideoInfoRequestUrlFormat, _videoId)).Result;
-            var content = HttpUtility.UrlDecode(response.Content.ReadAsStringAsync().Result);
-
-            var doc = BsonDocument.Parse(HttpUtility.ParseQueryString(content)["player_response"]);
-
-            if (doc["playabilityStatus"]["status"].AsString == "UNPLAYABLE")
-            {
-                throw new InvalidOperationException($"Video is unplayable: {doc["playabilityStatus"]["reason"].AsString}");
-            }
-
-            var streamDoc = doc["streamingData"]["formats"].AsBsonArray
-                .Select(x => x.AsBsonDocument)
-                .OrderBy(x => x["bitrate"].AsInt32)
-                .Last();
-
-            _streamUrl = streamDoc["url"].AsString;
+            _streamUrl = streamInfo.Url;
         }
     }
 }

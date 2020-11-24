@@ -13,8 +13,6 @@ namespace Driscod
 
         public const int GatewayEventsPerMinute = 120 - 20; // slightly less for safety
 
-        public const string YoutubeVideoInfoRequestUrlFormat = "https://www.youtube.com/get_video_info?video_id={0}&el=embedded&ps=default&eurl=&gl=US&hl=en";
-
         public static string WebSocketEndpoint
         {
             get
