@@ -14,11 +14,17 @@ namespace Driscod.Audio
 
         private Bot Bot { get; set; }
 
+        public bool Playing => Voice.AudioStreamer.Playing;
+
         public bool Stale => !Voice.Running;
 
         public Channel Channel => Bot.GetObject<Channel>(_channelId);
 
         public Guild Guild => Channel.Guild;
+
+        public EventHandler OnPlayAudio;
+
+        public EventHandler OnStopAudio;
 
         internal VoiceConnection(Channel channel, Voice voice)
         {
@@ -41,17 +47,49 @@ namespace Driscod.Audio
             {
                 Thread.Sleep(200);
             }
+
+            Voice.AudioStreamer.OnAudioStart += (a, b) =>
+            {
+                OnPlayAudio?.Invoke(this, null);
+            };
+
+            Voice.AudioStreamer.OnAudioStop += (a, b) =>
+            {
+                OnStopAudio?.Invoke(this, null);
+            };
         }
 
-        public async Task Play(IAudioSource audioSource)
+        public async Task PlayAudio(IAudioSource audioSource)
         {
-            await Voice.Play(audioSource);
+            var tcs = new TaskCompletionSource<bool>();
+
+            EventHandler handler = (a, b) =>
+            {
+                tcs.SetResult(true);
+            };
+
+            Voice.AudioStreamer.OnAudioStop += handler;
+
+            try
+            {
+                Voice.AudioStreamer.SendAudio(audioSource);
+                await tcs.Task;
+            }
+            finally
+            {
+                Voice.AudioStreamer.OnAudioStop -= handler;
+            }
         }
 
-        public void PlaySync(IAudioSource audioSource)
+        public void PlayAudioSync(IAudioSource audioSource)
         {
             ThrowIfStale();
-            Play(audioSource).Wait();
+            PlayAudio(audioSource).Wait();
+        }
+
+        public void StopAudio()
+        {
+            Voice.AudioStreamer.ClearAudio();
         }
 
         public void Disconnect()

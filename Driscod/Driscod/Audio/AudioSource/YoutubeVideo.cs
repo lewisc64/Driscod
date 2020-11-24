@@ -3,6 +3,8 @@ using System.Web;
 using System.Linq;
 using YoutubeExplode;
 using YoutubeExplode.Videos.Streams;
+using System.Threading.Tasks;
+using System.IO;
 
 namespace Driscod.Audio
 {
@@ -10,7 +12,11 @@ namespace Driscod.Audio
     {
         private string _videoId;
 
-        private string _streamUrl;
+        private YoutubeExplode.Videos.Video Video { get; set; }
+
+        private IStreamInfo StreamInfo { get; set; }
+
+        public string Name => Video.Title;
 
         public YoutubeVideo(string videoId)
         {
@@ -23,21 +29,21 @@ namespace Driscod.Audio
                 _videoId = videoId ?? throw new ArgumentNullException(nameof(videoId), "You must specify a YouTube video ID or URL.");
             }
 
-            FetchStreamUrl();
+            FetchStreamInfo().Wait();
         }
 
-        public float[] GetSamples(int sampleRate, int channels)
+        public Stream GetSampleStream(int sampleRate, int channels)
         {
-            return new AudioFile(_streamUrl).GetSamples(sampleRate, channels);
+            return new AudioFile(StreamInfo.Url).GetSampleStream(sampleRate, channels);
         }
 
-        private void FetchStreamUrl()
+        private async Task FetchStreamInfo()
         {
             var youtube = new YoutubeClient();
-            var streamManifest = youtube.Videos.Streams.GetManifestAsync(_videoId).Result;
-            var streamInfo = streamManifest.GetAudioOnly().WithHighestBitrate();
+            Video = await youtube.Videos.GetAsync(_videoId);
 
-            _streamUrl = streamInfo.Url;
+            var streamManifest = await youtube.Videos.Streams.GetManifestAsync(_videoId);
+            StreamInfo = streamManifest.GetAudioOnly().WithHighestBitrate();
         }
     }
 }

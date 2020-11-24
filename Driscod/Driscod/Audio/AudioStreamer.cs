@@ -10,6 +10,7 @@ using System.Threading;
 using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Macs;
 using Org.BouncyCastle.Crypto.Parameters;
+using System.IO;
 
 namespace Driscod.Audio
 {
@@ -21,6 +22,8 @@ namespace Driscod.Audio
 
         private static readonly Random Random = new Random();
 
+        private readonly object _audioSendLock = new object();
+
 #pragma warning disable S1450 // Private fields only used as local variables in methods should become local variables
         private readonly Thread _loopThread;
 #pragma warning restore S1450
@@ -31,19 +34,23 @@ namespace Driscod.Audio
 
         private int SamplesPerPacket => SampleRate * PacketIntervalMilliseconds / 1000;
 
+        private int MaxQueuedOpusPackets => (int)MaxPacketBuffer.TotalMilliseconds / PacketIntervalMilliseconds;
+
         private readonly Queue<byte[]> QueuedOpusPackets = new Queue<byte[]>();
 
-        private bool Playing { get; set; } = false;
+        public bool Playing { get; set; } = false;
 
         public int SampleRate { get; set; } = 48000;
 
         public int PacketIntervalMilliseconds { get; set; } = 20;
 
+        public TimeSpan MaxPacketBuffer { get; set; } = TimeSpan.FromMinutes(5);
+
         public int Channels { get; set; } = 2;
 
         public byte[] EncryptionKey { get; set; }
 
-        public string EncryptionMode { get; set; } = "xsalsa20_poly1305";
+        public string EncryptionMode { get; set; } = SupportedEncryptionModes.First();
 
         public int LocalPort { get; set; }
 
@@ -82,47 +89,69 @@ namespace Driscod.Audio
             _loopThread.Start();
         }
 
-        public void SendAudio(float[] samples, bool queueSilence = true)
+        public void SendAudio(Stream sampleStream, bool queueSilence = true)
         {
             const int ChunkSize = 16;
-            var chunk = new Queue<byte[]>();
 
-            var encoder = OpusEncoder.Create(SampleRate, Channels, OpusApplication.OPUS_APPLICATION_AUDIO);
-
-            for (var i = 0; i < samples.Length - SamplesPerPacket * Channels; i += SamplesPerPacket * Channels)
+            lock (_audioSendLock)
             {
-                var opusPacket = new byte[(int)(SamplesPerPacket * 1.1)];
-                int opusPacketSize = encoder.Encode(samples, i, SamplesPerPacket, opusPacket, 0, opusPacket.Length);
-                opusPacket = opusPacket.Take(opusPacketSize).ToArray();
+                var chunk = new Queue<byte[]>();
 
-                lock (QueuedOpusPackets)
+                var encoder = OpusEncoder.Create(SampleRate, Channels, OpusApplication.OPUS_APPLICATION_AUDIO);
+
+                var i = 0;
+                while (!_cancellationToken.IsCancellationRequested)
                 {
+                    var sampleBytes = new byte[SamplesPerPacket * Channels * 4];
+                    var bytesRead = sampleStream.Read(sampleBytes, i, sampleBytes.Length);
+
+                    var samples = new float[sampleBytes.Length / 4];
+                    for (var j = 0; j < sampleBytes.Length; j += 4)
+                    {
+                        samples[j / 4] = BitConverter.ToSingle(sampleBytes, j);
+                    }
+
+                    var opusPacket = new byte[(int)(SamplesPerPacket * 1.1)];
+                    int opusPacketSize = encoder.Encode(samples, 0, SamplesPerPacket, opusPacket, 0, opusPacket.Length);
+                    opusPacket = opusPacket.Take(opusPacketSize).ToArray();
+
                     chunk.Enqueue(opusPacket);
 
                     if (chunk.Count >= ChunkSize)
                     {
-                        while (chunk.Any())
-                        {
-                            QueuedOpusPackets.Enqueue(chunk.Dequeue());
-                        }
+                        EnqueueOpusPackets(chunk);
+                        chunk.Clear();
                     }
+
+                    if (bytesRead < sampleBytes.Length)
+                    {
+                        break;
+                    }
+
+                    i += SamplesPerPacket * Channels;
                 }
-            }
 
-            while (chunk.Any())
-            {
-                QueuedOpusPackets.Enqueue(chunk.Dequeue());
-            }
+                EnqueueOpusPackets(chunk);
 
-            if (queueSilence)
-            {
-                QueueSilence();
+                if (queueSilence)
+                {
+                    QueueSilence();
+                }
             }
         }
 
-        public void SendAudio(IAudioSource audioSource)
+        public void SendAudio(float[] samples, bool queueSilence = false)
         {
-            SendAudio(audioSource.GetSamples(SampleRate, Channels));
+            SendAudio(new MemoryStream(samples.Select(x => BitConverter.GetBytes(x)).Aggregate(new List<byte>(), (acc, value) =>
+            {
+                acc.AddRange(value);
+                return acc;
+            }).ToArray()), queueSilence: queueSilence);
+        }
+
+        public void SendAudio(IAudioSource audioSource, bool queueSilence = false)
+        {
+            SendAudio(audioSource.GetSampleStream(SampleRate, Channels), queueSilence: queueSilence);
         }
 
         public void ClearAudio()
@@ -182,7 +211,7 @@ namespace Driscod.Audio
                     else
                     {
                         // use inaccurate timing when no packets are being sent to save CPU.
-                        Thread.Sleep(PacketIntervalMilliseconds - (int)stopwatch.Elapsed.TotalMilliseconds);
+                        Thread.Sleep(Math.Max(PacketIntervalMilliseconds - (int)stopwatch.Elapsed.TotalMilliseconds, 0));
                     }
 
                     stopwatch.Restart();
@@ -209,6 +238,23 @@ namespace Driscod.Audio
         private void QueueSilence()
         {
             SendAudio(Enumerable.Repeat(0f, SamplesPerPacket * 10).ToArray(), queueSilence: false);
+        }
+
+        private void EnqueueOpusPackets(IEnumerable<byte[]> packets)
+        {
+            foreach (var packet in packets)
+            {
+                EnqueueOpusPacket(packet);
+            }
+        }
+
+        private void EnqueueOpusPacket(byte[] packet)
+        {
+            while (QueuedOpusPackets.Count > MaxQueuedOpusPackets)
+            {
+                Thread.Sleep(10);
+            }
+            QueuedOpusPackets.Enqueue(packet);
         }
 
         private byte[] AssemblePacket(byte[] opusData, ushort sequence, uint timestamp)

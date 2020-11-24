@@ -47,17 +47,17 @@ namespace Driscod.Gateway
 
         private int LocalPort { get; set; }
 
-        private AudioStreamer AudioStreamer { get; set; }
-
         private Shard ParentShard { get; set; }
 
         protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4006, 4014 }; // Should not reconnect upon forced disconnection.
 
-        public override string Name => $"VOICE-{_sessionId}";
+        public override string Name => $"VOICE-{string.Join('-', _sessionId.Reverse().Take(2))}";
 
         public bool Ready { get; private set; } = false;
 
         public bool Speaking { get; private set; } = false;
+
+        public AudioStreamer AudioStreamer { get; set; }
 
         public event EventHandler OnStop;
 
@@ -173,33 +173,6 @@ namespace Driscod.Gateway
 
                 Ready = true;
             });
-        }
-
-        public async Task Play(IAudioSource audioSource)
-        {
-            while (!Ready)
-            {
-                Thread.Sleep(200);
-            }
-
-            var tcs = new TaskCompletionSource<bool>();
-
-            EventHandler handler = (a, b) =>
-            {
-                tcs.SetResult(true);
-            };
-
-            AudioStreamer.OnAudioStop += handler;
-
-            try
-            {
-                AudioStreamer.SendAudio(audioSource);
-                await tcs.Task;
-            }
-            finally
-            {
-                AudioStreamer.OnAudioStop -= handler;
-            }
         }
 
         public override void Stop()

@@ -1,8 +1,11 @@
-﻿namespace Driscod.Audio
+﻿using System.IO;
+
+namespace Driscod.Audio
 {
     public interface IAudioSource
     {
-        // TODO: Use streams.
-        float[] GetSamples(int sampleRate, int channels);
+        string Name { get; }
+
+        Stream GetSampleStream(int sampleRate, int channels);
     }
 }
