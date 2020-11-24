@@ -33,6 +33,8 @@ namespace Driscod.DiscordObjects
 
         public IEnumerable<Channel> VoiceChannels => Channels.Where(x => x.ChannelType == ChannelType.Voice).OrderBy(x => x.Position);
 
+        public string Name { get; private set; }
+
         public string VanityUrlCode { get; private set; }
 
         public string ApplicationId { get; private set; }
@@ -123,6 +125,11 @@ namespace Driscod.DiscordObjects
         internal override void UpdateFromDocument(BsonDocument doc)
         {
             Id = doc["id"].AsString;
+
+            if (doc.Contains("name"))
+            {
+                Name = doc["name"].AsString;
+            }
 
             if (doc.Contains("members"))
             {

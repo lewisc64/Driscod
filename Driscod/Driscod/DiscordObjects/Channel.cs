@@ -141,12 +141,12 @@ namespace Driscod.DiscordObjects
                     if (++callCount >= 2)
                     {
                         DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
-                    {
-                        { "guild_id", Guild.Id },
-                        { "channel_id", Id },
-                        { "self_mute", false },
-                        { "self_deaf", false },
-                    });
+                        {
+                            { "guild_id", Guild.Id },
+                            { "channel_id", Id },
+                            { "self_mute", false },
+                            { "self_deaf", false },
+                        });
                     }
                 };
 
@@ -177,7 +177,7 @@ namespace Driscod.DiscordObjects
                                 return data["guild_id"].AsString == Guild.Id;
                             },
                             timeout: TimeSpan.FromSeconds(10));
-                    })).Wait();
+                    })).Wait(TimeSpan.FromSeconds(10));
 
                 var voiceGateway = new Voice(
                     DiscoveredOnShard,

@@ -89,7 +89,7 @@ namespace Driscod
             foreach (var shard in _shards)
             {
                 shard.Start();
-                Thread.Sleep(5000); // hmm...
+                Thread.Sleep(2000); // hmm...
             }
             while (!Ready)
             {

@@ -10,12 +10,28 @@ namespace Driscod.Audio
     {
         private string _videoId;
 
+        private string _streamUrl;
+
         public YoutubeVideo(string videoId)
         {
-            _videoId = videoId ?? throw new ArgumentNullException(nameof(videoId), $"You must specify a YouTube video ID.");
+            if (videoId != null && videoId.Contains("youtube.com"))
+            {
+                _videoId = HttpUtility.ParseQueryString(videoId.Split(new[] { '?' }).Last())["v"];
+            }
+            else
+            {
+                _videoId = videoId ?? throw new ArgumentNullException(nameof(videoId), "You must specify a YouTube video ID or URL.");
+            }
+
+            FetchStreamUrl();
         }
 
         public float[] GetSamples(int sampleRate, int channels)
+        {
+            return new AudioFile(_streamUrl).GetSamples(sampleRate, channels);
+        }
+
+        private void FetchStreamUrl()
         {
             var client = new HttpClient();
 
@@ -24,12 +40,17 @@ namespace Driscod.Audio
 
             var doc = BsonDocument.Parse(HttpUtility.ParseQueryString(content)["player_response"]);
 
-            var streamDoc = doc["streamingData"].AsBsonDocument["formats"].AsBsonArray
+            if (doc["playabilityStatus"]["status"].AsString == "UNPLAYABLE")
+            {
+                throw new InvalidOperationException($"Video is unplayable: {doc["playabilityStatus"]["reason"].AsString}");
+            }
+
+            var streamDoc = doc["streamingData"]["formats"].AsBsonArray
                 .Select(x => x.AsBsonDocument)
                 .OrderBy(x => x["bitrate"].AsInt32)
                 .Last();
 
-            return new AudioFile(streamDoc["url"].AsString).GetSamples(sampleRate, channels);
+            _streamUrl = streamDoc["url"].AsString;
         }
     }
 }
