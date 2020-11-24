@@ -1,6 +1,8 @@
 ﻿using System;
-using YoutubeExplode;
-using YoutubeExplode.Videos.Streams;
+using System.Net.Http;
+using System.Web;
+using System.Linq;
+using MongoDB.Bson;
 
 namespace Driscod.Audio
 {
@@ -10,16 +12,24 @@ namespace Driscod.Audio
 
         public YoutubeVideo(string videoId)
         {
-            _videoId = videoId ?? throw new ArgumentNullException(nameof(videoId), $"You must specify a YouTube video ID or URL.");
+            _videoId = videoId ?? throw new ArgumentNullException(nameof(videoId), $"You must specify a YouTube video ID.");
         }
 
         public float[] GetSamples(int sampleRate, int channels)
         {
-            var youtube = new YoutubeClient();
-            var streamManifest = youtube.Videos.Streams.GetManifestAsync(_videoId).Result;
-            var streamInfo = streamManifest.GetAudioOnly().WithHighestBitrate();
+            var client = new HttpClient();
 
-            return new AudioFile(streamInfo.Url).GetSamples(sampleRate, channels);
+            var response = client.GetAsync(string.Format(Connectivity.YoutubeVideoInfoRequestUrlFormat, _videoId)).Result;
+            var content = HttpUtility.UrlDecode(response.Content.ReadAsStringAsync().Result);
+
+            var doc = BsonDocument.Parse(HttpUtility.ParseQueryString(content)["player_response"]);
+
+            var streamDoc = doc["streamingData"].AsBsonDocument["formats"].AsBsonArray
+                .Select(x => x.AsBsonDocument)
+                .OrderBy(x => x["bitrate"].AsInt32)
+                .Last();
+
+            return new AudioFile(streamDoc["url"].AsString).GetSamples(sampleRate, channels);
         }
     }
 }
