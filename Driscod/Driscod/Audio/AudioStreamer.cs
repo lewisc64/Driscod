@@ -11,6 +11,7 @@ using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Macs;
 using Org.BouncyCastle.Crypto.Parameters;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace Driscod.Audio
 {
@@ -35,6 +36,8 @@ namespace Driscod.Audio
         private int MaxQueuedOpusPackets => (int)MaxPacketBuffer.TotalMilliseconds / PacketIntervalMilliseconds;
 
         private readonly Queue<byte[]> QueuedOpusPackets = new Queue<byte[]>();
+
+        private readonly object _packetQueueLock = new object();
 
         public bool Playing { get; set; } = false;
 
@@ -175,14 +178,17 @@ namespace Driscod.Audio
                 {
                     byte[] packet = null;
 
-                    lock (QueuedOpusPackets)
+                    lock (_packetQueueLock)
                     {
                         if (QueuedOpusPackets.Any())
                         {
                             if (!Playing)
                             {
                                 Playing = true;
-                                OnAudioStart.Invoke(this, null);
+                                Task.Run(() =>
+                                {
+                                    OnAudioStart?.Invoke(this, null);
+                                });
                             }
 
                             packet = AssemblePacket(QueuedOpusPackets.Dequeue(), sequence, timestamp);
@@ -192,7 +198,10 @@ namespace Driscod.Audio
                             if (Playing)
                             {
                                 Playing = false;
-                                OnAudioStop.Invoke(this, null);
+                                Task.Run(() =>
+                                {
+                                    OnAudioStop?.Invoke(this, null);
+                                });
                             }
                         }
                     }
@@ -224,11 +233,15 @@ namespace Driscod.Audio
             }
             finally
             {
+                Logger.Debug("Audio loop stopped.");
                 ClearAudio();
                 if (Playing)
                 {
                     Playing = false;
-                    OnAudioStop.Invoke(this, null);
+                    Task.Run(() =>
+                    {
+                        OnAudioStop?.Invoke(this, null);
+                    });
                 }
             }
         }
@@ -252,7 +265,10 @@ namespace Driscod.Audio
             {
                 Thread.Sleep(10);
             }
-            QueuedOpusPackets.Enqueue(packet);
+            lock (_packetQueueLock)
+            {
+                QueuedOpusPackets.Enqueue(packet);
+            }
         }
 
         private byte[] AssemblePacket(byte[] opusData, ushort sequence, uint timestamp)
