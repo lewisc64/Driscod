@@ -14,6 +14,8 @@ namespace Driscod.Gateway
 
         public static bool DetailedLogging { get; set; } = false;
 
+        private readonly object _listenerLock = new object();
+
         protected Thread _heartThread = null;
 
         private List<DateTime> LimitTracker { get; set; } = new List<DateTime>();
@@ -83,18 +85,14 @@ namespace Driscod.Gateway
 
                 var doc = BsonDocument.Parse(message.Message);
                 
-                lock (Listeners)
+                lock (_listenerLock)
                 {
                     foreach (var listener in Listeners)
                     {
-                        try
+                        Task.Run(() =>
                         {
                             listener.Invoke(doc);
-                        }
-                        catch
-                        {
-                            // intentionally empty
-                        }
+                        });
                     }
                 }
             });
@@ -239,7 +237,7 @@ namespace Driscod.Gateway
                 }
             };
 
-            lock (Listeners)
+            lock (_listenerLock)
             {
                 Listeners.Add(listener);
             }
@@ -254,7 +252,10 @@ namespace Driscod.Gateway
 
         public void RemoveListener(Action<BsonDocument> handler)
         {
-            Listeners.Remove(handler);
+            lock (_listenerLock)
+            {
+                Listeners.Remove(handler);
+            }
         }
 
         internal void Send(int type, BsonValue data = null)

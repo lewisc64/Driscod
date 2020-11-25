@@ -69,7 +69,7 @@ namespace Driscod.Audio
 
             EventHandler handler = (a, b) =>
             {
-                tcs.SetResult(true);
+                tcs.TrySetResult(true);
             };
 
             AudioStreamer.OnAudioStop += handler;
