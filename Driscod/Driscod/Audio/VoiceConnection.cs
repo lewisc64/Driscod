@@ -14,7 +14,9 @@ namespace Driscod.Audio
 
         private Bot Bot { get; set; }
 
-        public bool Playing => Voice.AudioStreamer.Playing;
+        private AudioStreamer AudioStreamer { get; set; }
+
+        public bool Playing => AudioStreamer.Playing;
 
         public bool Stale => !Voice.Running;
 
@@ -48,12 +50,14 @@ namespace Driscod.Audio
                 Thread.Sleep(200);
             }
 
-            Voice.AudioStreamer.OnAudioStart += (a, b) =>
+            AudioStreamer = Voice.CreateAudioStreamer();
+
+            AudioStreamer.OnAudioStart += (a, b) =>
             {
                 OnPlayAudio?.Invoke(this, null);
             };
 
-            Voice.AudioStreamer.OnAudioStop += (a, b) =>
+            AudioStreamer.OnAudioStop += (a, b) =>
             {
                 OnStopAudio?.Invoke(this, null);
             };
@@ -68,16 +72,16 @@ namespace Driscod.Audio
                 tcs.SetResult(true);
             };
 
-            Voice.AudioStreamer.OnAudioStop += handler;
+            AudioStreamer.OnAudioStop += handler;
 
             try
             {
-                Voice.AudioStreamer.SendAudio(audioSource);
+                AudioStreamer.SendAudio(audioSource);
                 await tcs.Task;
             }
             finally
             {
-                Voice.AudioStreamer.OnAudioStop -= handler;
+                AudioStreamer.OnAudioStop -= handler;
             }
         }
 
@@ -89,7 +93,7 @@ namespace Driscod.Audio
 
         public void StopAudio()
         {
-            Voice.AudioStreamer.ClearAudio();
+            throw new NotImplementedException();
         }
 
         public void Disconnect()

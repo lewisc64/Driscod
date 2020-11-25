@@ -57,8 +57,6 @@ namespace Driscod.Gateway
 
         public bool Speaking { get; private set; } = false;
 
-        public AudioStreamer AudioStreamer { get; set; }
-
         public event EventHandler OnStop;
 
         public Voice(Shard parentShard, string url, string serverId, string userId, string sessionId, string token)
@@ -151,26 +149,6 @@ namespace Driscod.Gateway
             AddListener<BsonDocument>((int)MessageType.SessionDescription, data =>
             {
                 SecretKey = data["secret_key"].AsBsonArray.Select(x => (byte)x.AsInt32).ToArray();
-
-                AudioStreamer = new AudioStreamer(CancellationToken.Token)
-                {
-                    SocketEndPoint = GetUdpEndpoint(),
-                    LocalPort = LocalPort,
-                    Ssrc = Ssrc,
-                    EncryptionKey = SecretKey,
-                    EncryptionMode = EncryptionMode,
-                };
-
-                AudioStreamer.OnAudioStart += (a, b) =>
-                {
-                    BeginSpeaking();
-                };
-
-                AudioStreamer.OnAudioStop += (a, b) =>
-                {
-                    EndSpeaking();
-                };
-
                 Ready = true;
             });
         }
@@ -186,6 +164,35 @@ namespace Driscod.Gateway
             });
 
             base.Stop();
+        }
+
+        public AudioStreamer CreateAudioStreamer()
+        {
+            if (!Ready)
+            {
+                throw new InvalidOperationException("Voice socket is not ready to create audio streamer.");
+            }
+
+            var streamer = new AudioStreamer(CancellationToken.Token)
+            {
+                SocketEndPoint = GetUdpEndpoint(),
+                LocalPort = LocalPort,
+                Ssrc = Ssrc,
+                EncryptionKey = SecretKey,
+                EncryptionMode = EncryptionMode,
+            };
+
+            streamer.OnAudioStart += (a, b) =>
+            {
+                BeginSpeaking();
+            };
+
+            streamer.OnAudioStop += (a, b) =>
+            {
+                EndSpeaking();
+            };
+
+            return streamer;
         }
 
         private void BeginSpeaking()

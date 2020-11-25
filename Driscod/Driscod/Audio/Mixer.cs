@@ -2,8 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading;
 
 namespace Driscod.Audio
 {
@@ -21,6 +19,10 @@ namespace Driscod.Audio
 
         public IEnumerable<string> QueueAsNames => MusicQueue.Select(x => x.AudioSource.Name);
 
+        public event EventHandler<MusicQueueItem> OnMusicAdded;
+
+        public event EventHandler<MusicQueueItem> OnMusicPlay;
+
         public Mixer(Guild guild)
         {
             if (guild.VoiceConnection == null || guild.VoiceConnection.Stale)
@@ -32,6 +34,14 @@ namespace Driscod.Audio
             _guildId = guild.Id;
 
             CreateListeners();
+        }
+
+        public void AddToQueue(IEnumerable<IAudioSource> audioSources)
+        {
+            foreach (var audioSource in audioSources)
+            {
+                AddToQueue(audioSource);
+            }
         }
 
         public void AddToQueue(IAudioSource audioSource)
@@ -46,6 +56,8 @@ namespace Driscod.Audio
         {
             MusicQueue.Enqueue(musicQueueItem);
 
+            OnMusicAdded?.Invoke(this, musicQueueItem);
+
             if (MusicQueue.Count == 1)
             {
                 PlayNext();
@@ -59,7 +71,9 @@ namespace Driscod.Audio
 
         private void PlayNext()
         {
-            VoiceConnection.PlayAudio(MusicQueue.Peek().AudioSource).Forget();
+            var item = MusicQueue.Peek();
+            OnMusicPlay?.Invoke(this, item);
+            VoiceConnection.PlayAudio(item.AudioSource).Forget();
         }
 
         private void CreateListeners()

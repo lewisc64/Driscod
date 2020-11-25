@@ -5,6 +5,7 @@ using YoutubeExplode;
 using YoutubeExplode.Videos.Streams;
 using System.Threading.Tasks;
 using System.IO;
+using System.Collections.Generic;
 
 namespace Driscod.Audio
 {
@@ -35,6 +36,15 @@ namespace Driscod.Audio
         public Stream GetSampleStream(int sampleRate, int channels)
         {
             return new AudioFile(StreamInfo.Url).GetSampleStream(sampleRate, channels);
+        }
+
+        public static async Task<IEnumerable<YoutubeVideo>> CreateFromPlaylist(string playlistId)
+        {
+            var youtube = new YoutubeClient();
+            var playlist = await youtube.Playlists.GetAsync(playlistId);
+            var videos = await youtube.Playlists.GetVideosAsync(playlist.Id);
+
+            return videos.Select(x => new YoutubeVideo(x.Id));
         }
 
         private async Task FetchStreamInfo()

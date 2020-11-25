@@ -20,8 +20,6 @@ namespace Driscod.Audio
 
         private static readonly string[] SupportedEncryptionModes = new[] { "xsalsa20_poly1305" };
 
-        private static readonly Random Random = new Random();
-
         private readonly object _audioSendLock = new object();
 
 #pragma warning disable S1450 // Private fields only used as local variables in methods should become local variables
