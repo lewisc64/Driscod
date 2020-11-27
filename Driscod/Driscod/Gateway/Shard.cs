@@ -73,7 +73,10 @@ namespace Driscod.Gateway
 
             AddListener<BsonDocument>((int)MessageType.Dispatch, "READY", data =>
             {
-                Logger.Info($"[{Name}] Ready.");
+                if (DetailedLogging)
+                {
+                    Logger.Info($"[{Name}] Ready.");
+                }
                 Ready = true;
                 SessionId = data["session_id"].AsString;
             });

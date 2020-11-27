@@ -48,19 +48,28 @@ namespace Driscod.Gateway
 
             Socket.Opened += (a, b) =>
             {
-                Logger.Info($"[{Name}] Socket opened.");
+                if (DetailedLogging)
+                {
+                    Logger.Info($"[{Name}] Socket opened.");
+                }
             };
 
             Socket.Closed += (_, e) =>
             {
                 var evnt = e as ClosedEventArgs;
-                Logger.Info($"[{Name}] Socket closed. Code: {evnt?.Code}, Reason: {evnt?.Reason}");
+                if (DetailedLogging)
+                {
+                    Logger.Info($"[{Name}] Socket closed. Code: {evnt?.Code}, Reason: {evnt?.Reason}");
+                }
 
                 if (KeepSocketOpen)
                 {
                     if (evnt != null && RespectedCloseSocketCodes.Contains(evnt.Code))
                     {
-                        Logger.Debug($"[{Name}] Socket is marked to be kept open, but encountered respected close code '{evnt.Code}'.");
+                        if (DetailedLogging)
+                        {
+                            Logger.Debug($"[{Name}] Socket is marked to be kept open, but encountered respected close code '{evnt.Code}'.");
+                        }
                         PurgeThreads();
                     }
                     else
@@ -103,7 +112,10 @@ namespace Driscod.Gateway
             CancellationToken = new CancellationTokenSource();
             CancellationToken.Token.Register(() =>
             {
-                Logger.Debug($"[{Name}] Cancellation requested, threads should stop.");
+                if (DetailedLogging)
+                {
+                    Logger.Debug($"[{Name}] Cancellation requested, threads should stop.");
+                }
             });
 
             try
@@ -275,7 +287,7 @@ namespace Driscod.Gateway
             {
                 if (DetailedLogging)
                 {
-                    Logger.Debug($"[{Name}] -> {response.ToString()}");
+                    Logger.Debug($"[{Name}] -> {response}");
                 }
                 Socket.Send(response.ToString());
             });
@@ -309,7 +321,10 @@ namespace Driscod.Gateway
 
         protected void Heart()
         {
-            Logger.Debug($"[{Name}] Heart started.");
+            if (DetailedLogging)
+            {
+                Logger.Debug($"[{Name}] Heart started.");
+            }
 
             var nextHeartbeat = Environment.TickCount + HeartbeatIntervalMilliseconds;
 
@@ -352,7 +367,10 @@ namespace Driscod.Gateway
             }
             finally
             {
-                Logger.Debug($"[{Name}] Heart stopped.");
+                if (DetailedLogging)
+                {
+                    Logger.Debug($"[{Name}] Heart stopped.");
+                }
             }
         }
 
@@ -372,7 +390,10 @@ namespace Driscod.Gateway
 
         private void PurgeThreads()
         {
-            Logger.Debug($"[{Name}] Purging threads...");
+            if (DetailedLogging)
+            {
+                Logger.Debug($"[{Name}] Purging threads...");
+            }
 
             if (!CancellationToken.IsCancellationRequested)
             {

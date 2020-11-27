@@ -9,6 +9,8 @@ namespace Driscod.Audio
     {
         private string _channelId;
 
+        private bool _disposed = false;
+
         private Bot Bot { get; set; }
 
         private VoiceConnection VoiceConnection
@@ -71,6 +73,8 @@ namespace Driscod.Audio
 
         public void AddToQueue(IAudioSource audioSource)
         {
+            ThrowIfDisposed();
+
             AddToQueue(new MusicQueueItem
             {
                 AudioSource = audioSource,
@@ -79,6 +83,8 @@ namespace Driscod.Audio
 
         public void AddToQueue(MusicQueueItem musicQueueItem)
         {
+            ThrowIfDisposed();
+
             InternalMusicQueue.Enqueue(musicQueueItem);
 
             OnMusicAdded?.Invoke(this, musicQueueItem);
@@ -91,11 +97,15 @@ namespace Driscod.Audio
 
         public void Skip()
         {
+            ThrowIfDisposed();
+
             VoiceConnection.StopAudio();
         }
 
         public void Dispose()
         {
+            _disposed = true;
+
             lock (InternalMusicQueue)
             {
                 InternalMusicQueue.Clear();
@@ -126,6 +136,14 @@ namespace Driscod.Audio
                     }
                 }
             };
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(Mixer));
+            }
         }
     }
 
