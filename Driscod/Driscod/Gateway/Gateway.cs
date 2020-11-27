@@ -119,7 +119,10 @@ namespace Driscod.Gateway
         public virtual void Stop()
         {
             KeepSocketOpen = false;
-            Socket.Close("Internal stop call.");
+            if (Socket.State != WebSocketState.Closed)
+            {
+                Socket.Close("Internal stop call.");
+            }
             while (Socket.State != WebSocketState.Closed || Threads.Any())
             {
                 Thread.Sleep(200);
@@ -280,12 +283,19 @@ namespace Driscod.Gateway
 
         protected void ManageThread(Thread thread, string name = null)
         {
-            if (!thread.IsAlive)
+            if (!CancellationToken.IsCancellationRequested)
             {
-                thread.Start();
+                if (!thread.IsAlive)
+                {
+                    thread.Start();
+                }
+                Threads.Add(thread);
+                thread.Name = name ?? $"{Name} {thread.ManagedThreadId}";
             }
-            Threads.Add(thread);
-            thread.Name = name ?? $"{Name} {thread.ManagedThreadId}";
+            else
+            {
+                Logger.Warn($"[{Name}] Attempted to add thread while cancellation is requested.");
+            }
         }
 
         protected void StartHeart()

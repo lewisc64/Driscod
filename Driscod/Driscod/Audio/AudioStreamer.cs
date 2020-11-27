@@ -263,7 +263,7 @@ namespace Driscod.Audio
         {
             while (QueuedOpusPackets.Count > MaxQueuedOpusPackets)
             {
-                Thread.Sleep(10);
+                Thread.Sleep(PacketIntervalMilliseconds / 2);
             }
             lock (_packetQueueLock)
             {

@@ -5,33 +5,58 @@ using System.Linq;
 
 namespace Driscod.Audio
 {
-    public class Mixer
+    public class Mixer : IDisposable
     {
-        private string _guildId;
+        private string _channelId;
 
         private Bot Bot { get; set; }
 
-        private Guild Guild => Bot.GetObject<Guild>(_guildId);
+        private VoiceConnection VoiceConnection
+        {
+            get
+            {
+                if (Guild.VoiceConnection == null || Guild.VoiceConnection.Stale)
+                {
+                    Channel.ConnectVoice();
+                }
 
-        private VoiceConnection VoiceConnection => Guild.VoiceConnection;
+                return Guild.VoiceConnection;
+            }
+        }
 
-        private Queue<MusicQueueItem> MusicQueue { get; set; } = new Queue<MusicQueueItem>();
+        private Queue<MusicQueueItem> InternalMusicQueue { get; set; } = new Queue<MusicQueueItem>();
 
-        public IEnumerable<string> QueueAsNames => MusicQueue.Select(x => x.AudioSource.Name);
+        private Guild Guild => Channel.Guild;
+
+        public Channel Channel
+        {
+            get
+            {
+                return Bot.GetObject<Channel>(_channelId);
+            }
+
+            set
+            {
+                _channelId = value.Id;
+            }
+        }
+
+        public IEnumerable<string> QueueAsNames => InternalMusicQueue.Select(x => x.AudioSource.Name);
+
+        public IReadOnlyCollection<MusicQueueItem> MusicQueue => InternalMusicQueue;
+
+        public MusicQueueItem CurrentlyPlaying => MusicQueue.FirstOrDefault();
+
+        public MusicQueueItem Next => MusicQueue.Skip(1).FirstOrDefault();
 
         public event EventHandler<MusicQueueItem> OnMusicAdded;
 
         public event EventHandler<MusicQueueItem> OnMusicPlay;
 
-        public Mixer(Guild guild)
+        public Mixer(Channel channel)
         {
-            if (guild.VoiceConnection == null || guild.VoiceConnection.Stale)
-            {
-                throw new ArgumentException("Not connected to a voice channel in specified guild.", nameof(guild));
-            }
-
-            Bot = guild.Bot;
-            _guildId = guild.Id;
+            Bot = channel.Bot;
+            Channel = channel;
 
             CreateListeners();
         }
@@ -54,11 +79,11 @@ namespace Driscod.Audio
 
         public void AddToQueue(MusicQueueItem musicQueueItem)
         {
-            MusicQueue.Enqueue(musicQueueItem);
+            InternalMusicQueue.Enqueue(musicQueueItem);
 
             OnMusicAdded?.Invoke(this, musicQueueItem);
 
-            if (MusicQueue.Count == 1)
+            if (InternalMusicQueue.Count == 1)
             {
                 PlayNext();
             }
@@ -69,9 +94,18 @@ namespace Driscod.Audio
             VoiceConnection.StopAudio();
         }
 
+        public void Dispose()
+        {
+            lock (InternalMusicQueue)
+            {
+                InternalMusicQueue.Clear();
+            }
+            Guild.VoiceConnection?.Dispose();
+        }
+
         private void PlayNext()
         {
-            var item = MusicQueue.Peek();
+            var item = InternalMusicQueue.Peek();
             OnMusicPlay?.Invoke(this, item);
             VoiceConnection.PlayAudio(item.AudioSource).Forget();
         }
@@ -80,12 +114,15 @@ namespace Driscod.Audio
         {
             VoiceConnection.OnStopAudio += (a, b) =>
             {
-                lock (MusicQueue)
+                lock (InternalMusicQueue)
                 {
-                    MusicQueue.Dequeue();
-                    if (MusicQueue.Count > 0)
+                    if (InternalMusicQueue.Any())
                     {
-                        PlayNext();
+                        InternalMusicQueue.Dequeue();
+                        if (InternalMusicQueue.Any())
+                        {
+                            PlayNext();
+                        }
                     }
                 }
             };

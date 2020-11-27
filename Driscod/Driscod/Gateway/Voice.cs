@@ -2,6 +2,7 @@
 using MongoDB.Bson;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -155,15 +156,42 @@ namespace Driscod.Gateway
 
         public override void Stop()
         {
-            ParentShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
+            try
             {
-                { "guild_id", _serverId },
-                { "channel_id", BsonNull.Value },
-                { "self_mute", false },
-                { "self_deaf", false },
-            });
+                ParentShard.WaitForEvent<BsonDocument>(
+                    (int)Shard.MessageType.Dispatch,
+                    "VOICE_STATE_UPDATE",
+                    listenerCreateCallback: () =>
+                    {
+                        ParentShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
+                        {
+                        { "guild_id", _serverId },
+                        { "channel_id", BsonNull.Value },
+                        { "self_mute", false },
+                        { "self_deaf", false },
+                        });
+                    },
+                    validator: data =>
+                    {
+                        return data["guild_id"].AsString == _serverId;
+                    });
+            }
+            finally
+            {
+                // Discord should close the socket after the voice state update.
+                var stopwatch = Stopwatch.StartNew();
+                while (Socket.State != WebSocket4Net.WebSocketState.Closed && stopwatch.Elapsed < TimeSpan.FromSeconds(10))
+                {
+                    Thread.Sleep(200);
+                }
 
-            base.Stop();
+                if (Socket.State != WebSocket4Net.WebSocketState.Closed)
+                {
+                    Logger.Warn($"[{Name}] Expected Discord to close the socket, but it did not.");
+                }
+
+                base.Stop();
+            }
         }
 
         public AudioStreamer CreateAudioStreamer()

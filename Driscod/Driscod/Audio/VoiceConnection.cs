@@ -65,6 +65,8 @@ namespace Driscod.Audio
 
         public async Task PlayAudio(IAudioSource audioSource)
         {
+            ThrowIfStale();
+
             var tcs = new TaskCompletionSource<bool>();
 
             EventHandler handler = (a, b) =>
@@ -104,7 +106,10 @@ namespace Driscod.Audio
                 {
                     Voice.Stop();
                 }
-                Guild.VoiceConnection = null;
+                if (Guild.VoiceConnection == this)
+                {
+                    Guild.VoiceConnection = null;
+                }
             }
         }
 
