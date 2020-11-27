@@ -19,8 +19,6 @@ namespace Driscod.Audio
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
-        private static readonly string[] SupportedEncryptionModes = new[] { "xsalsa20_poly1305" };
-
         private readonly object _audioSendLock = new object();
 
 #pragma warning disable S1450 // Private fields only used as local variables in methods should become local variables
@@ -51,7 +49,7 @@ namespace Driscod.Audio
 
         public byte[] EncryptionKey { get; set; }
 
-        public string EncryptionMode { get; set; } = SupportedEncryptionModes.First();
+        public string EncryptionMode { get; set; }
 
         public int LocalPort { get; set; }
 
@@ -273,53 +271,11 @@ namespace Driscod.Audio
 
         private byte[] AssemblePacket(byte[] opusData, ushort sequence, uint timestamp)
         {
-            var packet = new List<byte>() { 0x80, 0x78 };
-
-            if (BitConverter.IsLittleEndian)
-            {
-                packet.AddRange(BitConverter.GetBytes(sequence).Reverse());
-                packet.AddRange(BitConverter.GetBytes(timestamp).Reverse());
-                packet.AddRange(BitConverter.GetBytes(Ssrc).Reverse());
-            }
-            else
-            {
-                packet.AddRange(BitConverter.GetBytes(sequence));
-                packet.AddRange(BitConverter.GetBytes(timestamp));
-                packet.AddRange(BitConverter.GetBytes(Ssrc));
-            }
-
-            var nonce = new byte[24];
-            packet.CopyTo(nonce, 0);
-
-            if (!SupportedEncryptionModes.Contains(EncryptionMode))
-            {
-                throw new InvalidOperationException($"Encryption mode '{EncryptionMode}' is not supported.");
-            }
-
-            packet.AddRange(Encrypt(opusData, EncryptionKey, nonce));
-
-            return packet.ToArray();
-        }
-
-        private byte[] Encrypt(byte[] bytes, byte[] key, byte[] nonce)
-        {
-            var salsa = new XSalsa20Engine();
-            var poly = new Poly1305();
-
-            salsa.Init(true, new ParametersWithIV(new KeyParameter(key), nonce));
-
-            byte[] subKey = new byte[key.Length];
-            salsa.ProcessBytes(subKey, 0, key.Length, subKey, 0);
-
-            byte[] output = new byte[bytes.Length + poly.GetMacSize()];
-
-            salsa.ProcessBytes(bytes, 0, bytes.Length, output, poly.GetMacSize());
-
-            poly.Init(new KeyParameter(subKey));
-            poly.BlockUpdate(output, poly.GetMacSize(), bytes.Length);
-            poly.DoFinal(output, 0);
-
-            return output;
+            return new RtpPacketGenerator()
+                .CreateHeader(sequence, timestamp, Ssrc)
+                .AddPayload(opusData)
+                .EncryptPayload(EncryptionMode, EncryptionKey)
+                .Finalize();
         }
     }
 }

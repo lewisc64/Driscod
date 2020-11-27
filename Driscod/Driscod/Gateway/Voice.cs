@@ -8,7 +8,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Driscod.Gateway
 {
@@ -38,9 +37,11 @@ namespace Driscod.Gateway
 
         private ushort UdpSocketPort { get; set; }
 
-        private IEnumerable<string> Modes { get; set; }
+        private IEnumerable<string> EndpointEncryptionModes { get; set; }
 
-        private string EncryptionMode => "xsalsa20_poly1305";
+        private IEnumerable<string> SupportedEncryptionModes => EndpointEncryptionModes.Intersect(RtpPacketGenerator.SupportedEncryptionModes);
+
+        private string EncryptionMode { get; set; }
 
         private uint Ssrc { get; set; }
 
@@ -99,15 +100,17 @@ namespace Driscod.Gateway
             {
                 UdpSocketIpAddress = data["ip"].AsString;
                 UdpSocketPort = (ushort)data["port"].AsInt32;
-                Modes = data["modes"].AsBsonArray.Select(x => x.AsString);
+                EndpointEncryptionModes = data["modes"].AsBsonArray.Select(x => x.AsString);
                 Ssrc = (uint)data["ssrc"].AsInt32;
 
-                if (!Modes.Contains(EncryptionMode))
+                if (!SupportedEncryptionModes.Any())
                 {
-                    Logger.Fatal($"[{Name}] Encryption mode '{EncryptionMode}' not listed in gateway response.");
+                    Logger.Fatal($"[{Name}] Found no supported encryption modes.");
                     Stop();
                     return;
                 }
+
+                EncryptionMode = SupportedEncryptionModes.First();
 
                 byte[] ssrcBytes;
 
