@@ -1,6 +1,7 @@
 ﻿using MongoDB.Bson;
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace Driscod.Gateway
 {
@@ -49,13 +50,13 @@ namespace Driscod.Gateway
             _totalShards = totalShards;
             _intents = intents;
 
-            AddListener<BsonDocument>((int)MessageType.Hello, data =>
+            AddListener<BsonDocument>((int)MessageType.Hello, async data =>
             {
                 HeartbeatIntervalMilliseconds = data["heartbeat_interval"].AsInt32;
 
                 if (KeepSocketOpen)
                 {
-                    Send((int)MessageType.Resume, new BsonDocument
+                    await Send((int)MessageType.Resume, new BsonDocument
                     {
                         { "token", _token },
                         { "session_id", SessionId },
@@ -64,7 +65,7 @@ namespace Driscod.Gateway
                 }
                 else
                 {
-                    Send((int)MessageType.Identify, Identity);
+                    await Send((int)MessageType.Identify, Identity);
                 }
 
                 KeepSocketOpen = true;
@@ -88,13 +89,13 @@ namespace Driscod.Gateway
             });
         }
 
-        protected override void Heartbeat()
+        protected override async Task Heartbeat()
         {
-            WaitForEvent<BsonDocument>(
+            await ListenForEvent<BsonDocument>(
                 (int)MessageType.HeartbeatAck,
-                listenerCreateCallback: () =>
+                listenerCreateCallback: async () =>
                 {
-                    Send((int)MessageType.Heartbeat, Sequence);
+                    await Send((int)MessageType.Heartbeat, Sequence);
                 },
                 timeout: TimeSpan.FromSeconds(10));
         }

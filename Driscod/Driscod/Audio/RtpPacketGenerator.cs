@@ -1,4 +1,5 @@
-﻿using Org.BouncyCastle.Crypto.Engines;
+﻿using Driscod.Extensions;
+using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Macs;
 using Org.BouncyCastle.Crypto.Parameters;
 using System;
@@ -28,23 +29,18 @@ namespace Driscod.Audio
 
         public RtpPacketGenerator CreateHeader(ushort sequence, uint timestamp, uint ssrc)
         {
-            var header = new List<byte>() { 0x80, 0x78 };
+            var header = new byte[12];
 
-            if (BitConverter.IsLittleEndian)
-            {
-                header.AddRange(BitConverter.GetBytes(sequence).Reverse());
-                header.AddRange(BitConverter.GetBytes(timestamp).Reverse());
-                header.AddRange(BitConverter.GetBytes(ssrc).Reverse());
-            }
-            else
-            {
-                header.AddRange(BitConverter.GetBytes(sequence));
-                header.AddRange(BitConverter.GetBytes(timestamp));
-                header.AddRange(BitConverter.GetBytes(ssrc));
-            }
+            header[0] = 0x80;
+            header[1] = 0x78;
+
+            sequence.ToBytesBigEndian().CopyTo(header, 2);
+            timestamp.ToBytesBigEndian().CopyTo(header, 4);
+            ssrc.ToBytesBigEndian().CopyTo(header, 8);
 
             Packet.AddRange(header);
-            _headerLength = header.Count;
+
+            _headerLength = header.Length;
             _payloadStart = Packet.Count;
 
             return this;
@@ -67,17 +63,21 @@ namespace Driscod.Audio
             {
                 case "xsalsa20_poly1305":
                     Packet.GetRange(0, _headerLength).CopyTo(nonce, 0);
-                    return AddPayload(Encrypt(payload, key, nonce));
+                    payload = EncryptXSalsa20Poly1305(payload, key, nonce);
+                    break;
 
                 case "xsalsa20_poly1305_suffix":
                     Random.NextBytes(nonce);
-                    AddPayload(Encrypt(payload, key, nonce));
-                    Packet.InsertRange(_payloadStart + _payloadLength, nonce);
-                    return this;
+                    payload = EncryptXSalsa20Poly1305(payload, key, nonce)
+                        .Concat(nonce)
+                        .ToArray();
+                    break;
 
                 default:
                     throw new ArgumentException($"Encryption mode '{mode}' is not supported.", nameof(mode));
             }
+
+            return AddPayload(payload);
         }
 
         private byte[] RemovePayload()
@@ -87,7 +87,7 @@ namespace Driscod.Audio
             return payload;
         }
 
-        private byte[] Encrypt(byte[] bytes, byte[] key, byte[] nonce)
+        private byte[] EncryptXSalsa20Poly1305(byte[] bytes, byte[] key, byte[] nonce)
         {
             var salsa = new XSalsa20Engine();
             var poly = new Poly1305();

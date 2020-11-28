@@ -1,13 +1,14 @@
 ﻿using Driscod.Audio;
+using Driscod.Extensions;
 using MongoDB.Bson;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Driscod.Gateway
 {
@@ -39,7 +40,7 @@ namespace Driscod.Gateway
 
         private IEnumerable<string> EndpointEncryptionModes { get; set; }
 
-        private IEnumerable<string> SupportedEncryptionModes => EndpointEncryptionModes.Intersect(RtpPacketGenerator.SupportedEncryptionModes);
+        private IEnumerable<string> AllowedEncryptionModes => EndpointEncryptionModes.Intersect(RtpPacketGenerator.SupportedEncryptionModes);
 
         private string EncryptionMode { get; set; }
 
@@ -48,6 +49,8 @@ namespace Driscod.Gateway
         private byte[] SecretKey { get; set; }
 
         private int LocalPort { get; set; }
+
+        private string ExternalAddress { get; set; }
 
         private Shard ParentShard { get; set; }
 
@@ -71,22 +74,22 @@ namespace Driscod.Gateway
 
             ParentShard = parentShard;
 
-            Socket.Opened += (a, b) =>
+            Socket.Opened += async (a, b) =>
             {
                 if (KeepSocketOpen)
                 {
-                    Send((int)MessageType.Resume, Identity);
+                    await Send((int)MessageType.Resume, Identity);
                 }
                 else
                 {
-                    Send((int)MessageType.Identify, Identity);
+                    await Send((int)MessageType.Identify, Identity);
                     Ready = false;
                 }
             };
 
             Socket.Closed += (a, b) =>
             {
-                OnStop.Invoke(this, null);
+                OnStop.Invoke(this, EventArgs.Empty);
             };
 
             AddListener<BsonDocument>((int)MessageType.Hello, data =>
@@ -96,53 +99,31 @@ namespace Driscod.Gateway
                 KeepSocketOpen = true;
             });
 
-            AddListener<BsonDocument>((int)MessageType.Ready, data =>
+            AddListener<BsonDocument>((int)MessageType.Ready, async data =>
             {
                 UdpSocketIpAddress = data["ip"].AsString;
                 UdpSocketPort = (ushort)data["port"].AsInt32;
                 EndpointEncryptionModes = data["modes"].AsBsonArray.Select(x => x.AsString);
                 Ssrc = (uint)data["ssrc"].AsInt32;
 
-                if (!SupportedEncryptionModes.Any())
+                if (!AllowedEncryptionModes.Any())
                 {
-                    Logger.Fatal($"[{Name}] Found no supported encryption modes.");
-                    Stop();
+                    Logger.Fatal($"[{Name}] Found no allowed encryption modes.");
+                    await Stop();
                     return;
                 }
 
-                EncryptionMode = SupportedEncryptionModes.First();
+                EncryptionMode = AllowedEncryptionModes.First();
 
-                byte[] ssrcBytes;
+                await FetchExternalAddress();
 
-                if (BitConverter.IsLittleEndian)
-                {
-                    ssrcBytes = BitConverter.GetBytes(Ssrc).Reverse().ToArray();
-                }
-                else
-                {
-                    ssrcBytes = BitConverter.GetBytes(Ssrc);
-                }
-
-                var datagram = new byte[] { 0, 1, 0, 70 }.Concat(ssrcBytes).Concat(Enumerable.Repeat((byte)0, 66)).ToArray();
-                byte[] response;
-
-                using (var udpClient = new UdpClient())
-                {
-                    var endpoint = GetUdpEndpoint();
-                    udpClient.Send(datagram, datagram.Length, endpoint);
-                    response = udpClient.Receive(ref endpoint);
-                }
-
-                LocalPort = BitConverter.ToUInt16(response.Reverse().Take(2).ToArray(), 0);
-                var address = Encoding.UTF8.GetString(response.Skip(8).TakeWhile(x => x != 0).ToArray());
-
-                Send((int)MessageType.SelectProtocol, new BsonDocument
+                await Send((int)MessageType.SelectProtocol, new BsonDocument
                 {
                     { "protocol", "udp" },
                     { "data",
                         new BsonDocument
                         {
-                            { "address", address },
+                            { "address", ExternalAddress },
                             { "port", LocalPort },
                             { "mode", EncryptionMode },
                         }
@@ -157,16 +138,16 @@ namespace Driscod.Gateway
             });
         }
 
-        public override void Stop()
+        public override async Task Stop()
         {
             try
             {
-                ParentShard.WaitForEvent<BsonDocument>(
+                await ParentShard.ListenForEvent<BsonDocument>(
                     (int)Shard.MessageType.Dispatch,
                     "VOICE_STATE_UPDATE",
-                    listenerCreateCallback: () =>
+                    listenerCreateCallback: async () =>
                     {
-                        ParentShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
+                        await ParentShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
                         {
                         { "guild_id", _serverId },
                         { "channel_id", BsonNull.Value },
@@ -182,18 +163,22 @@ namespace Driscod.Gateway
             finally
             {
                 // Discord should close the socket after the voice state update.
-                var stopwatch = Stopwatch.StartNew();
-                while (Socket.State != WebSocket4Net.WebSocketState.Closed && stopwatch.Elapsed < TimeSpan.FromSeconds(10))
-                {
-                    Thread.Sleep(200);
-                }
+                await Task.WhenAny(
+                    Task.Run(() =>
+                    {
+                        while (Socket.State != WebSocket4Net.WebSocketState.Closed)
+                        {
+                            Thread.Sleep(200);
+                        }
+                    }),
+                    Task.Delay(TimeSpan.FromSeconds(10)));
 
                 if (Socket.State != WebSocket4Net.WebSocketState.Closed)
                 {
                     Logger.Warn($"[{Name}] Expected Discord to close the socket, but it did not.");
                 }
 
-                base.Stop();
+                await base.Stop();
             }
         }
 
@@ -213,22 +198,40 @@ namespace Driscod.Gateway
                 EncryptionMode = EncryptionMode,
             };
 
-            streamer.OnAudioStart += (a, b) =>
+            streamer.OnAudioStart += async (a, b) =>
             {
-                BeginSpeaking();
+                await BeginSpeaking();
             };
 
-            streamer.OnAudioStop += (a, b) =>
+            streamer.OnAudioStop += async (a, b) =>
             {
-                EndSpeaking();
+                await EndSpeaking();
             };
 
             return streamer;
         }
 
-        private void BeginSpeaking()
+        protected override async Task Heartbeat()
         {
-            Send((int)MessageType.Speaking, new BsonDocument
+            var nonce = _random.Next(int.MinValue, int.MaxValue);
+
+            var response = await ListenForEvent<int>(
+                (int)MessageType.HeartbeatAck,
+                listenerCreateCallback: async () =>
+                {
+                    await Send((int)MessageType.Heartbeat, nonce);
+                },
+                timeout: TimeSpan.FromSeconds(10));
+
+            if (response != nonce)
+            {
+                throw new InvalidOperationException("Heartbeat failed, recieved incorrect nonce.");
+            }
+        }
+
+        private async Task BeginSpeaking()
+        {
+            await Send((int)MessageType.Speaking, new BsonDocument
             {
                 { "ssrc", (int)Ssrc }, // TODO: Make this not dodgy.
                 { "delay", 0 },
@@ -237,9 +240,9 @@ namespace Driscod.Gateway
             Speaking = true;
         }
 
-        private void EndSpeaking()
+        private async Task EndSpeaking()
         {
-            Send((int)MessageType.Speaking, new BsonDocument
+            await Send((int)MessageType.Speaking, new BsonDocument
             {
                 { "ssrc", (int)Ssrc },
                 { "delay", 0 },
@@ -250,25 +253,27 @@ namespace Driscod.Gateway
 
         private IPEndPoint GetUdpEndpoint()
         {
-            return new IPEndPoint(new IPAddress(UdpSocketIpAddress.Split(new[] { '.' }).Select(x => Convert.ToByte(x)).ToArray()), UdpSocketPort);
+            return new IPEndPoint(IPAddress.Parse(UdpSocketIpAddress), UdpSocketPort);
         }
 
-        protected override void Heartbeat()
+        private async Task FetchExternalAddress()
         {
-            var nonce = _random.Next(int.MinValue, int.MaxValue);
+            var datagram = new byte[] { 0, 1, 0, 70 }
+                .Concat(Ssrc.ToBytesBigEndian())
+                .Concat(Enumerable.Repeat((byte)0, 66))
+                .ToArray();
 
-            var response = WaitForEvent<int>(
-                (int)MessageType.HeartbeatAck,
-                listenerCreateCallback: () =>
-                {
-                    Send((int)MessageType.Heartbeat, nonce);
-                },
-                timeout: TimeSpan.FromSeconds(10));
+            byte[] response;
 
-            if (response != nonce)
+            using (var udpClient = new UdpClient())
             {
-                throw new InvalidOperationException("Heartbeat failed, recieved incorrect nonce.");
+                var endpoint = GetUdpEndpoint();
+                await udpClient.SendAsync(datagram, datagram.Length, endpoint);
+                response = udpClient.Receive(ref endpoint);
             }
+
+            LocalPort = (response[response.Length - 2] << 8) + response[response.Length - 1];
+            ExternalAddress = Encoding.UTF8.GetString(response.Skip(8).TakeWhile(x => x != 0).ToArray());
         }
 
         public enum MessageType

@@ -1,19 +1,18 @@
 ﻿using System;
-using System.Web;
-using System.Linq;
-using YoutubeExplode;
-using YoutubeExplode.Videos.Streams;
-using System.Threading.Tasks;
-using System.IO;
 using System.Collections.Generic;
+using System.IO;
+using System.Threading.Tasks;
+using YoutubeExplode;
+using YoutubeExplode.Videos;
+using YoutubeExplode.Videos.Streams;
 
 namespace Driscod.Audio
 {
     public class YoutubeVideo : IAudioSource
     {
-        private string _videoId;
+        private readonly string _videoId;
 
-        private YoutubeExplode.Videos.Video Video { get; set; }
+        private Video Video { get; set; }
 
         private IStreamInfo StreamInfo { get; set; }
 
@@ -21,15 +20,7 @@ namespace Driscod.Audio
 
         public YoutubeVideo(string videoId)
         {
-            if (videoId != null && videoId.Contains("youtube.com"))
-            {
-                _videoId = HttpUtility.ParseQueryString(videoId.Split(new[] { '?' }).Last())["v"];
-            }
-            else
-            {
-                _videoId = videoId ?? throw new ArgumentNullException(nameof(videoId), "You must specify a YouTube video ID or URL.");
-            }
-
+            _videoId = videoId ?? throw new ArgumentNullException(nameof(videoId), "You must specify a YouTube video ID or URL.");
             FetchStreamInfo().Wait();
         }
 
@@ -41,8 +32,7 @@ namespace Driscod.Audio
         public static IEnumerable<YoutubeVideo> CreateFromPlaylist(string playlistId)
         {
             var youtube = new YoutubeClient();
-            var playlist = youtube.Playlists.GetAsync(playlistId).Result;
-            var videos = youtube.Playlists.GetVideosAsync(playlist.Id).GetAwaiter().GetResult();
+            var videos = youtube.Playlists.GetVideosAsync(playlistId).GetAwaiter().GetResult();
 
             foreach (var video in videos)
             {

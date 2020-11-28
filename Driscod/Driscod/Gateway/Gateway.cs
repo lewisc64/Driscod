@@ -16,11 +16,9 @@ namespace Driscod.Gateway
 
         private readonly object _listenerLock = new object();
 
-        protected Thread _heartThread = null;
-
         private List<DateTime> LimitTracker { get; set; } = new List<DateTime>();
 
-        private List<Thread> Threads { get; set; } = new List<Thread>();
+        private List<Task> Tasks { get; set; } = new List<Task>();
 
         private List<Action<BsonDocument>> Listeners { get; set; } = new List<Action<BsonDocument>>();
 
@@ -54,7 +52,7 @@ namespace Driscod.Gateway
                 }
             };
 
-            Socket.Closed += (_, e) =>
+            Socket.Closed += async (_, e) =>
             {
                 var evnt = e as ClosedEventArgs;
                 if (DetailedLogging)
@@ -70,18 +68,18 @@ namespace Driscod.Gateway
                         {
                             Logger.Debug($"[{Name}] Socket is marked to be kept open, but encountered respected close code '{evnt.Code}'.");
                         }
-                        PurgeThreads();
+                        await ClearTasks();
                     }
                     else
                     {
-                        PurgeThreads();
+                        await ClearTasks();
                         Thread.Sleep(ReconnectDelay);
-                        Start();
+                        await Start();
                     }
                 }
                 else
                 {
-                    PurgeThreads();
+                    await ClearTasks();
                 }
             };
 
@@ -93,7 +91,7 @@ namespace Driscod.Gateway
                 }
 
                 var doc = BsonDocument.Parse(message.Message);
-                
+
                 lock (_listenerLock)
                 {
                     foreach (var listener in Listeners)
@@ -107,7 +105,7 @@ namespace Driscod.Gateway
             });
         }
 
-        public virtual void Start()
+        public virtual Task Start()
         {
             CancellationToken = new CancellationTokenSource();
             CancellationToken.Token.Register(() =>
@@ -126,19 +124,23 @@ namespace Driscod.Gateway
             {
                 Logger.Warn($"[{Name}] Attempted to open socket, but socket was not closed.");
             }
+
+            return Task.CompletedTask;
         }
 
-        public virtual void Stop()
+        public virtual Task Stop()
         {
             KeepSocketOpen = false;
             if (Socket.State != WebSocketState.Closed)
             {
                 Socket.Close("Internal stop call.");
             }
-            while (Socket.State != WebSocketState.Closed || Threads.Any())
+            while (Socket.State != WebSocketState.Closed || Tasks.Any())
             {
                 Thread.Sleep(200);
             }
+
+            return Task.CompletedTask;
         }
 
         public void Restart()
@@ -147,17 +149,17 @@ namespace Driscod.Gateway
             Start();
         }
 
-        public T WaitForEvent<T>(int type, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
+        public async Task<T> ListenForEvent<T>(int type, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
         {
-            return WaitForEvent(type, new string[0], listenerCreateCallback: listenerCreateCallback, validator: validator, timeout: timeout);
+            return await ListenForEvent(type, new string[0], listenerCreateCallback: listenerCreateCallback, validator: validator, timeout: timeout);
         }
 
-        public T WaitForEvent<T>(int type, string eventName, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
+        public async Task<T> ListenForEvent<T>(int type, string eventName, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
         {
-            return WaitForEvent(type, new[] { eventName }, listenerCreateCallback: listenerCreateCallback, validator: validator, timeout: timeout);
+            return await ListenForEvent(type, new[] { eventName }, listenerCreateCallback: listenerCreateCallback, validator: validator, timeout: timeout);
         }
 
-        public T WaitForEvent<T>(int type, IEnumerable<string> eventNames, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
+        public async Task<T> ListenForEvent<T>(int type, IEnumerable<string> eventNames, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
         {
             Action<BsonDocument> handler = null;
             try
@@ -182,13 +184,15 @@ namespace Driscod.Gateway
 
                 if (timeout == null)
                 {
-                    tcs.Task.Wait(CancellationToken.Token);
+                    await Task.WhenAny(
+                        tcs.Task,
+                        Task.Delay(TimeSpan.FromMinutes(15), CancellationToken.Token));
                 }
                 else
                 {
-                    Task.WhenAny(
+                    await Task.WhenAny(
                         tcs.Task,
-                        Task.Delay((int)timeout.Value.TotalMilliseconds, CancellationToken.Token)).Wait();
+                        Task.Delay(timeout.Value, CancellationToken.Token));
                 }
 
                 CancellationToken.Token.ThrowIfCancellationRequested();
@@ -273,7 +277,7 @@ namespace Driscod.Gateway
             }
         }
 
-        internal void Send(int type, BsonValue data = null)
+        internal async Task Send(int type, BsonValue data = null)
         {
             var response = new BsonDocument
             {
@@ -283,7 +287,7 @@ namespace Driscod.Gateway
             {
                 response["d"] = data;
             }
-            RateLimitWait(() =>
+            await RateLimitWait().ContinueWith(_ =>
             {
                 if (DetailedLogging)
                 {
@@ -293,33 +297,24 @@ namespace Driscod.Gateway
             });
         }
 
-        protected void ManageThread(Thread thread, string name = null)
+        protected void ManageTask(Task task)
         {
             if (!CancellationToken.IsCancellationRequested)
             {
-                if (!thread.IsAlive)
-                {
-                    thread.Start();
-                }
-                Threads.Add(thread);
-                thread.Name = name ?? $"{Name} {thread.ManagedThreadId}";
+                Tasks.Add(task);
             }
             else
             {
-                Logger.Warn($"[{Name}] Attempted to add thread while cancellation is requested.");
+                Logger.Warn($"[{Name}] Attempted to manage task while cancellation is requested.");
             }
         }
 
         protected void StartHeart()
         {
-            if (Threads.Any(x => x.Name == $"{Name} Heart"))
-            {
-                throw new InvalidOperationException("Heart is already running.");
-            }
-            ManageThread(new Thread(Heart), name: $"{Name} Heart");
+            ManageTask(Heart());
         }
 
-        protected void Heart()
+        protected async Task Heart()
         {
             if (DetailedLogging)
             {
@@ -334,7 +329,7 @@ namespace Driscod.Gateway
                 {
                     if (Environment.TickCount < nextHeartbeat)
                     {
-                        Task.Delay(nextHeartbeat - Environment.TickCount, CancellationToken.Token).Wait();
+                        await Task.Delay(nextHeartbeat - Environment.TickCount, CancellationToken.Token);
                     }
 
                     if (CancellationToken.IsCancellationRequested)
@@ -343,7 +338,7 @@ namespace Driscod.Gateway
                     }
 
                     nextHeartbeat = Environment.TickCount + HeartbeatIntervalMilliseconds;
-                    Heartbeat();
+                    await Heartbeat();
                 }
             }
             catch (TaskCanceledException)
@@ -374,25 +369,27 @@ namespace Driscod.Gateway
             }
         }
 
-        protected abstract void Heartbeat();
+        protected abstract Task Heartbeat();
 
-        private void RateLimitWait(Action callback)
+        private async Task RateLimitWait()
         {
-            do
+            await Task.Run(() =>
             {
-                LimitTracker.RemoveAll(x => (DateTime.UtcNow - x).TotalSeconds > 60);
-            }
-            while (LimitTracker.Count >= Connectivity.GatewayEventsPerMinute);
+                do
+                {
+                    LimitTracker.RemoveAll(x => (DateTime.UtcNow - x).TotalSeconds > 60);
+                }
+                while (LimitTracker.Count >= Connectivity.GatewayEventsPerMinute);
 
-            LimitTracker.Add(DateTime.UtcNow);
-            callback();
+                LimitTracker.Add(DateTime.UtcNow);
+            });
         }
 
-        private void PurgeThreads()
+        private async Task ClearTasks()
         {
             if (DetailedLogging)
             {
-                Logger.Debug($"[{Name}] Purging threads...");
+                Logger.Debug($"[{Name}] Clearing tasks...");
             }
 
             if (!CancellationToken.IsCancellationRequested)
@@ -401,18 +398,21 @@ namespace Driscod.Gateway
             }
             else
             {
-                Logger.Warn($"[{Name}] Cancellation requested before thread purge call.");
+                Logger.Warn($"[{Name}] Cancellation requested before task clear call.");
             }
 
-            foreach (var thread in Threads)
+            foreach (var task in Tasks)
             {
-                if (!thread.Join(30000))
+                await Task.WhenAny(
+                    task,
+                    Task.Delay(TimeSpan.FromSeconds(30)));
+                if (!task.IsCompleted)
                 {
-                    Logger.Error($"[{Name}] Thread '{thread.Name}' still alive after 30 seconds.");
+                    Logger.Error($"[{Name}] Task '{task.Id}' still running after 30 seconds.");
                 }
             }
 
-            Threads.Clear();
+            Tasks.Clear();
         }
     }
 }

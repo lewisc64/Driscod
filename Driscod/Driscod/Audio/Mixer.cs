@@ -1,15 +1,16 @@
 ﻿using Driscod.DiscordObjects;
+using Driscod.Extensions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace Driscod.Audio
 {
-    public class Mixer : IDisposable
+    public class Mixer
     {
         private string _channelId;
 
-        private bool _disposed = false;
+        private bool _halted = false;
 
         private Bot Bot { get; set; }
 
@@ -73,7 +74,7 @@ namespace Driscod.Audio
 
         public void AddToQueue(IAudioSource audioSource)
         {
-            ThrowIfDisposed();
+            ThrowIfHalted();
 
             AddToQueue(new MusicQueueItem
             {
@@ -83,7 +84,7 @@ namespace Driscod.Audio
 
         public void AddToQueue(MusicQueueItem musicQueueItem)
         {
-            ThrowIfDisposed();
+            ThrowIfHalted();
 
             InternalMusicQueue.Enqueue(musicQueueItem);
 
@@ -97,20 +98,20 @@ namespace Driscod.Audio
 
         public void Skip()
         {
-            ThrowIfDisposed();
+            ThrowIfHalted();
 
             VoiceConnection.StopAudio();
         }
 
-        public void Dispose()
+        public void Halt()
         {
-            _disposed = true;
+            _halted = true;
 
             lock (InternalMusicQueue)
             {
                 InternalMusicQueue.Clear();
             }
-            Guild.VoiceConnection?.Dispose();
+            Guild.VoiceConnection?.Disconnect();
         }
 
         private void PlayNext()
@@ -138,11 +139,11 @@ namespace Driscod.Audio
             };
         }
 
-        private void ThrowIfDisposed()
+        private void ThrowIfHalted()
         {
-            if (_disposed)
+            if (_halted)
             {
-                throw new ObjectDisposedException(nameof(Mixer));
+                throw new InvalidOperationException($"Cannot perform operation, {nameof(Mixer)} has been halted.");
             }
         }
     }

@@ -6,9 +6,9 @@ using System.Threading.Tasks;
 
 namespace Driscod.Audio
 {
-    public class VoiceConnection : IDisposable
+    public class VoiceConnection
     {
-        private string _channelId;
+        private readonly string _channelId;
 
         private Voice Voice { get; set; }
 
@@ -24,9 +24,9 @@ namespace Driscod.Audio
 
         public Guild Guild => Channel.Guild;
 
-        public EventHandler OnPlayAudio;
+        public EventHandler OnPlayAudio { get; set; }
 
-        public EventHandler OnStopAudio;
+        public EventHandler OnStopAudio { get; set; }
 
         internal VoiceConnection(Channel channel, Voice voice)
         {
@@ -54,12 +54,12 @@ namespace Driscod.Audio
 
             AudioStreamer.OnAudioStart += (a, b) =>
             {
-                OnPlayAudio?.Invoke(this, null);
+                OnPlayAudio?.Invoke(this, EventArgs.Empty);
             };
 
             AudioStreamer.OnAudioStop += (a, b) =>
             {
-                OnStopAudio?.Invoke(this, null);
+                OnStopAudio?.Invoke(this, EventArgs.Empty);
             };
         }
 
@@ -104,25 +104,12 @@ namespace Driscod.Audio
             {
                 if (Voice.Running)
                 {
-                    Voice.Stop();
+                    Voice.Stop().Wait();
                 }
                 if (Guild.VoiceConnection == this)
                 {
                     Guild.VoiceConnection = null;
                 }
-            }
-        }
-
-        public void Dispose()
-        {
-            Disconnect();
-        }
-
-        internal void DisposeIfStale()
-        {
-            if (Stale)
-            {
-                Dispose();
             }
         }
 

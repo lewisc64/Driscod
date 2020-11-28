@@ -1,11 +1,12 @@
-﻿using System;
+﻿using Driscod.Audio;
+using Driscod.Extensions;
+using Driscod.Gateway;
+using MongoDB.Bson;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
-using Driscod.Audio;
-using Driscod.Gateway;
-using MongoDB.Bson;
 
 namespace Driscod.DiscordObjects
 {
@@ -128,7 +129,11 @@ namespace Driscod.DiscordObjects
 
             lock (Guild.VoiceLock)
             {
-                Guild.VoiceConnection?.DisposeIfStale();
+                if (Guild.VoiceConnection != null && Guild.VoiceConnection.Stale)
+                {
+                    Guild.VoiceConnection.Disconnect();
+                    Guild.VoiceConnection = null;
+                }
 
                 if (Guild.VoiceConnection != null)
                 {
@@ -136,11 +141,11 @@ namespace Driscod.DiscordObjects
                 }
 
                 var callCount = 0;
-                Action sendAction = () =>
+                Action sendAction = async () =>
                 {
                     if (++callCount >= 2)
                     {
-                        DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
+                        await DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
                         {
                             { "guild_id", Guild.Id },
                             { "channel_id", Id },
@@ -154,9 +159,9 @@ namespace Driscod.DiscordObjects
                 BsonDocument serverData = null;
 
                 Task.WhenAll(
-                    Task.Run(() =>
+                    Task.Run(async () =>
                     {
-                        stateData = DiscoveredOnShard.WaitForEvent<BsonDocument>(
+                        stateData = await DiscoveredOnShard.ListenForEvent<BsonDocument>(
                             (int)Shard.MessageType.Dispatch,
                             "VOICE_STATE_UPDATE",
                             listenerCreateCallback: sendAction,
@@ -166,9 +171,9 @@ namespace Driscod.DiscordObjects
                             },
                             timeout: TimeSpan.FromSeconds(10));
                     }),
-                    Task.Run(() =>
+                    Task.Run(async () =>
                     {
-                        serverData = DiscoveredOnShard.WaitForEvent<BsonDocument>(
+                        serverData = await DiscoveredOnShard.ListenForEvent<BsonDocument>(
                             (int)Shard.MessageType.Dispatch,
                             "VOICE_SERVER_UPDATE",
                             listenerCreateCallback: sendAction,

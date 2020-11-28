@@ -1,7 +1,7 @@
 ﻿using System.Linq;
 using System.Net.Http.Headers;
 
-namespace Driscod
+namespace Driscod.Extensions
 {
     public static class HttpResponseHeadersExtensions
     {

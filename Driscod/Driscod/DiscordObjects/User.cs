@@ -1,7 +1,8 @@
-﻿using System.Collections.Generic;
+﻿using Driscod.Extensions;
+using MongoDB.Bson;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using MongoDB.Bson;
 
 namespace Driscod.DiscordObjects
 {

@@ -1,15 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 
-namespace Driscod
+namespace Driscod.Extensions
 {
     public static class TaskExtensions
     {
-        public static Task Forget(this Task task)
+        public static void Forget(this Task task)
         {
-            return task;
+            // intentionally empty
         }
     }
 }
