@@ -3,10 +3,6 @@
 
 ## Examples
 
-### Echo
-
-Echos any message it recieves.
-
 ### Approaches
 
 These two approaches are identical in function.
