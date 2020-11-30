@@ -182,7 +182,7 @@ namespace Driscod
         public T GetObject<T>(string id)
             where T : DiscordObject
         {
-            if (Objects.ContainsKey(typeof(T)) && Objects[typeof(T)].ContainsKey(id))
+            if (id != null && Objects.ContainsKey(typeof(T)) && Objects[typeof(T)].ContainsKey(id))
             {
                 return (T)Objects[typeof(T)][id];
             }

@@ -7,15 +7,46 @@
 
 Echos any message it recieves.
 
+### Approaches
+
+These two approaches are identical in function.
+
+#### CommandBotWrapper
+
+```cs
+public class TestBotWrapper : CommandBotWrapper
+{
+    public TestBot(Bot bot)
+        : base(bot)
+    {
+    }
+
+    [Command("ping")]
+    public void Ping(Message message, string[] args)
+    {
+        message.Channel.SendMessage("pong");
+    }
+}
+
+...
+
+var bot = new Bot(TOKEN);
+bot.Start();
+
+var testBot = new TestBotWrapper(bot);
+```
+
+#### Event Handlers
+
 ```cs
 var bot = new Bot(TOKEN);
 bot.Start();
 
 bot.OnMessage += (_, message) =>
 {
-    if (message.Author != bot.User)
+    if (message.Author != bot.User && message.Content == "!ping")
     {
-        message.Channel.SendMessage(message.Content);
+        message.Channel.SendMessage("pong");
     }
 };
 ```

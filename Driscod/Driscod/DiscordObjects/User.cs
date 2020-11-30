@@ -46,6 +46,11 @@ namespace Driscod.DiscordObjects
             DmChannel.SendMessage(message: message, embed: embed);
         }
 
+        public override string ToString()
+        {
+            return $"{Username}:{Discriminator}";
+        }
+
         internal override void UpdateFromDocument(BsonDocument doc)
         {
             Id = doc["id"].AsString;
