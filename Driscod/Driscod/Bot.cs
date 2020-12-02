@@ -32,7 +32,7 @@ namespace Driscod
 
         private HttpClient _httpClient = null;
 
-        public HttpClient HttpClient
+        private HttpClient HttpClient
         {
             get
             {

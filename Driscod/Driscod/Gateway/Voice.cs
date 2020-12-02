@@ -22,15 +22,13 @@ namespace Driscod.Gateway
 
         private readonly string _userId;
 
-        private readonly string _sessionId;
-
         private readonly string _token;
 
         private BsonDocument Identity => new BsonDocument
         {
             { "server_id", _serverId },
             { "user_id", _userId },
-            { "session_id", _sessionId },
+            { "session_id", SessionId },
             { "token", _token },
         };
 
@@ -56,11 +54,13 @@ namespace Driscod.Gateway
 
         protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4006, 4014 }; // Should not reconnect upon forced disconnection.
 
-        public override string Name => $"VOICE-{string.Join('-', _sessionId.Reverse().Take(2))}";
+        public override string Name => $"VOICE-{string.Join('-', SessionId.Reverse().Take(2))}";
 
         public bool Ready { get; private set; } = false;
 
         public bool Speaking { get; private set; } = false;
+
+        public string SessionId { get; set; }
 
         public event EventHandler OnStop;
 
@@ -69,10 +69,10 @@ namespace Driscod.Gateway
         {
             _serverId = serverId;
             _userId = userId;
-            _sessionId = sessionId;
             _token = token;
 
             ParentShard = parentShard;
+            SessionId = sessionId;
 
             Socket.Opened += async (a, b) =>
             {

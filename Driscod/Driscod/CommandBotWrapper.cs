@@ -67,7 +67,7 @@ namespace Driscod
         {
         }
 
-        [AttributeUsage(AttributeTargets.Method)]
+        [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
         public class CommandAttribute : Attribute
         {
             public string TriggerName { get; set; }

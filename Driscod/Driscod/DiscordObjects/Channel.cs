@@ -129,8 +129,11 @@ namespace Driscod.DiscordObjects
 
             lock (Guild.VoiceLock)
             {
+                string oldSessionId = null;
+
                 if (Guild.VoiceConnection != null && Guild.VoiceConnection.Stale)
                 {
+                    oldSessionId = Guild.VoiceConnection.VoiceSessionId;
                     Guild.VoiceConnection.Disconnect();
                     Guild.VoiceConnection = null;
                 }
@@ -158,39 +161,46 @@ namespace Driscod.DiscordObjects
                 BsonDocument stateData = null;
                 BsonDocument serverData = null;
 
-                Task.WhenAll(
-                    Task.Run(async () =>
-                    {
-                        stateData = await DiscoveredOnShard.ListenForEvent<BsonDocument>(
-                            (int)Shard.MessageType.Dispatch,
-                            "VOICE_STATE_UPDATE",
-                            listenerCreateCallback: sendAction,
-                            validator: data =>
-                            {
-                                return data["guild_id"].AsString == Guild.Id && data["channel_id"] == Id && data["user_id"].AsString == Bot.User.Id;
-                            },
-                            timeout: TimeSpan.FromSeconds(10));
-                    }),
-                    Task.Run(async () =>
-                    {
-                        serverData = await DiscoveredOnShard.ListenForEvent<BsonDocument>(
-                            (int)Shard.MessageType.Dispatch,
-                            "VOICE_SERVER_UPDATE",
-                            listenerCreateCallback: sendAction,
-                            validator: data =>
-                            {
-                                return data["guild_id"].AsString == Guild.Id;
-                            },
-                            timeout: TimeSpan.FromSeconds(10));
-                    })).Wait(TimeSpan.FromSeconds(10));
+                try
+                {
+                    Task.WhenAll(
+                        Task.Run(async () =>
+                        {
+                            stateData = await DiscoveredOnShard.ListenForEvent<BsonDocument>(
+                                (int)Shard.MessageType.Dispatch,
+                                "VOICE_STATE_UPDATE",
+                                listenerCreateCallback: sendAction,
+                                validator: data =>
+                                {
+                                    return data["guild_id"].AsString == Guild.Id && data["channel_id"] == Id && data["user_id"].AsString == Bot.User.Id;
+                                },
+                                timeout: TimeSpan.FromSeconds(10));
+                        }),
+                        Task.Run(async () =>
+                        {
+                            serverData = await DiscoveredOnShard.ListenForEvent<BsonDocument>(
+                                (int)Shard.MessageType.Dispatch,
+                                "VOICE_SERVER_UPDATE",
+                                listenerCreateCallback: sendAction,
+                                validator: data =>
+                                {
+                                    return data["guild_id"].AsString == Guild.Id;
+                                },
+                                timeout: TimeSpan.FromSeconds(10));
+                        })).Wait(TimeSpan.FromSeconds(10));
+                }
+                catch (TimeoutException ex)
+                {
+                    Logger.Warn(ex, "Timed out while fetching voice data.");
+                }
 
                 var voiceGateway = new Voice(
-                    DiscoveredOnShard,
-                    Connectivity.FormatVoiceSocketEndpoint(serverData["endpoint"].AsString),
-                    Guild.Id,
-                    Bot.User.Id,
-                    stateData["session_id"].AsString,
-                    serverData["token"].AsString);
+                        DiscoveredOnShard,
+                        Connectivity.FormatVoiceSocketEndpoint(serverData["endpoint"].AsString),
+                        Guild.Id,
+                        Bot.User.Id,
+                        (stateData?["session_id"]?.AsString ?? oldSessionId) ?? throw new InvalidOperationException("Failed to get session ID."),
+                        serverData?["token"]?.AsString ?? throw new InvalidOperationException("Failed to get token."));
 
                 Guild.VoiceConnection = new VoiceConnection(this, voiceGateway);
             }

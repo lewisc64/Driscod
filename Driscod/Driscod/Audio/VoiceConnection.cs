@@ -16,6 +16,8 @@ namespace Driscod.Audio
 
         private AudioStreamer AudioStreamer { get; set; }
 
+        public string VoiceSessionId => Voice.SessionId;
+
         public bool Playing => AudioStreamer.Playing;
 
         public bool Stale => !Voice.Running;
