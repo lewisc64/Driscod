@@ -19,6 +19,8 @@ namespace Driscod.Audio
 
         private readonly object _audioSendLock = new object();
 
+        private readonly object _packetQueueLock = new object();
+
         private UdpClient _udpClient;
 
         private CancellationToken _cancellationToken;
@@ -28,8 +30,6 @@ namespace Driscod.Audio
         private int MaxQueuedOpusPackets => (int)MaxPacketBuffer.TotalMilliseconds / PacketIntervalMilliseconds;
 
         private readonly Queue<byte[]> QueuedOpusPackets = new Queue<byte[]>();
-
-        private readonly object _packetQueueLock = new object();
 
         public bool Playing { get; set; } = false;
 
@@ -161,28 +161,18 @@ namespace Driscod.Audio
                 uint timestamp = 0;
                 ushort sequence = 0;
 
-                var stopwatch = Stopwatch.StartNew();
+                var timer = new DriftTimer(TimeSpan.FromMilliseconds(PacketIntervalMilliseconds));
 
                 while (!_cancellationToken.IsCancellationRequested)
                 {
                     var packet = GetNextPacket(sequence, timestamp);
 
+                    await timer.Wait(_cancellationToken);
+
                     if (packet.Length > 0)
                     {
-                        while (stopwatch.Elapsed.TotalMilliseconds < PacketIntervalMilliseconds)
-                        {
-                            // intentionally empty
-                        }
-
                         await UdpClient.SendAsync(packet, packet.Length);
                     }
-                    else
-                    {
-                        // use inaccurate timing when no packets are being sent to save CPU.
-                        await Task.Delay(Math.Max(PacketIntervalMilliseconds - (int)stopwatch.Elapsed.TotalMilliseconds, 0), _cancellationToken);
-                    }
-
-                    stopwatch.Restart();
 
                     sequence++;
                     timestamp += (uint)SamplesPerPacket;
