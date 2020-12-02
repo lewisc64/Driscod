@@ -60,9 +60,14 @@ Bot.OnMessage += (_, message) =>
     if (message.Content == "play me that tune")
     {
         var channel = message.Channel.Guild.VoiceStates.First(x => x.User == message.Author).Channel;
-        using (var connection = channel.ConnectVoice())
+        var connection = channel.ConnectVoice();
+        try
         {
             connection.PlaySync(new AudioFile(FILE_PATH));
+        }
+        finally
+        {
+            connection.Disconnect();
         }
     }
 };
