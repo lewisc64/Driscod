@@ -6,7 +6,7 @@ using System.Linq;
 
 namespace Driscod.Audio
 {
-    public class Mixer
+    public class Mixer : IDisposable
     {
         private string _channelId;
 
@@ -111,7 +111,23 @@ namespace Driscod.Audio
             {
                 InternalMusicQueue.Clear();
             }
-            Guild.VoiceConnection?.Disconnect();
+            Guild.VoiceConnection?.Dispose();
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                Halt();
+                InternalMusicQueue = null;
+                Bot = null;
+            }
         }
 
         private void PlayNext()

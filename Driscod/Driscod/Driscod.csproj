@@ -7,7 +7,7 @@
   <ItemGroup>
     <PackageReference Include="BouncyCastle.NetCore" Version="1.8.8" />
     <PackageReference Include="Concentus" Version="1.1.7" />
-    <PackageReference Include="MongoDB.Bson" Version="2.11.4" />
+    <PackageReference Include="MongoDB.Bson" Version="2.11.5" />
     <PackageReference Include="NAudio" Version="1.10.0" />
     <PackageReference Include="NLog" Version="4.7.5" />
     <PackageReference Include="SonarAnalyzer.CSharp" Version="8.15.0.24505">
@@ -15,7 +15,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="WebSocket4Net" Version="0.15.2" />
-    <PackageReference Include="YoutubeExplode" Version="5.1.8" />
+    <PackageReference Include="YoutubeExplode" Version="5.1.9" />
   </ItemGroup>
 
 </Project>

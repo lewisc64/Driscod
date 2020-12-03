@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Driscod.Audio
 {
-    public class VoiceConnection
+    public class VoiceConnection : IDisposable
     {
         private readonly string _channelId;
 
@@ -112,6 +112,22 @@ namespace Driscod.Audio
                 {
                     Guild.VoiceConnection = null;
                 }
+            }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                Disconnect();
+                AudioStreamer = null;
+                Voice = null;
             }
         }
 
