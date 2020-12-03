@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -82,9 +83,12 @@ namespace Driscod.Tests
                 }),
                 Task.Run(() =>
                 {
+                    var stopwatch = Stopwatch.StartNew();
                     Thread.Sleep(10);
                     rateLimit.LockAndWait(() =>
                     {
+                        stopwatch.Stop();
+                        Assert.GreaterOrEqual(stopwatch.Elapsed.TotalMilliseconds, 50);
                         Assert.IsTrue(firstCompleted);
                         return new HttpResponseMessage
                         {
