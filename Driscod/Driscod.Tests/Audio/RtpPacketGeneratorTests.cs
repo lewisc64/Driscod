@@ -10,7 +10,7 @@ namespace Driscod.Tests.Audio
         public void RtpPacketGenerator_CreateHeader_Success()
         {
             Assert.AreEqual(
-                new byte[] { 0x80, 0x78, 0, 1, 0, 0, 1, 0, 255, 255, 255, 255 },
+                new byte[] { 128, 120, 0, 1, 0, 0, 1, 0, 255, 255, 255, 255 },
                 new RtpPacketGenerator()
                     .CreateHeader(1, 256, uint.MaxValue)
                     .Finalize());

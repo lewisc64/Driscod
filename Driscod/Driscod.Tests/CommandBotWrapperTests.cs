@@ -12,8 +12,16 @@ namespace Driscod.Tests
         [TestCase("!test", true, new string[0], true)]
         [TestCase("!test", false, new string[0], true)]
         [TestCase("test", false, new string[0], false)]
+        [TestCase("!", false, new string[0], false)]
+        [TestCase("!test1", false, new string[0], false)]
+        [TestCase("?test", false, new string[0], false)]
         [TestCase("!test 1", false, new[] { "1" }, true)]
         [TestCase("!test 1 2 3 4 5", false, new[] { "1", "2", "3", "4", "5" }, true)]
+        [TestCase("!test \"a b\"", false, new[] { "a b" }, true)]
+        [TestCase("!test 'a b'", false, new[] { "a b" }, true)]
+        [TestCase("!test ''", false, new[] { "" }, true)]
+        [TestCase("!test '\"a\"'", false, new[] { "\"a\"" }, true)]
+        [TestCase("!test 1 \"a 'b' c\" 2 3 '1 \"2\" 3' 4 5", false, new[] { "1", "a 'b' c", "2", "3", "1 \"2\" 3", "4", "5" }, true)]
         public async Task CommandBotWrapper_Test(string messageContent, bool isDm, string[] expectedArguments, bool shouldMatch)
         {
             var botUser = new User();

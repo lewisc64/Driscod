@@ -50,8 +50,17 @@ namespace Driscod
                         var regex = @$"^(?:{Regex.Escape(CommandPrefix)}){(ignorePrefix ? "?" : string.Empty)}{Regex.Escape(trigger)}(?:\s+|$)";
                         if (Regex.IsMatch(message.Content, regex))
                         {
-                            var commandArgs = Regex.Split(message.Content, @"\s+")
+                            var commandArgs = Regex.Matches(message.Content, @"([""'])[^\2]*?\1|\b\S+\b")
                                 .Skip(1)
+                                .Select(x => x.Value)
+                                .Select(x =>
+                                {
+                                    if (x.StartsWith('"') && x.EndsWith('"') || x.StartsWith('\'') && x.EndsWith('\''))
+                                    {
+                                        return x.Substring(1, x.Length - 2);
+                                    }
+                                    return x;
+                                })
                                 .ToArray();
 
                             method.Invoke(this, new object[] { message, commandArgs });

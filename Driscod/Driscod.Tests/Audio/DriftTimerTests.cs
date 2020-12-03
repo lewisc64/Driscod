@@ -10,7 +10,7 @@ namespace Driscod.Tests.Audio
     {
         [TestCase(200, 20)]
         [TestCase(100, 90)]
-        public async Task DriftTimer_Success(int measureTime, int interval)
+        public async Task DriftTimer_Wait(int measureTime, int interval)
         {
             var timer = new DriftTimer(TimeSpan.FromMilliseconds(interval));
 
