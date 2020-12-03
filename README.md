@@ -1,4 +1,6 @@
 # Driscod
+![.NET 5.0](https://github.com/lewisc64/Driscod/workflows/.NET%205.0/badge.svg)
+
  C# Discord API library.
 
 ## Examples
