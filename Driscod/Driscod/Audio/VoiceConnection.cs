@@ -104,7 +104,7 @@ namespace Driscod.Audio
         {
             lock (Guild.VoiceLock)
             {
-                if (Voice.Running)
+                if (Voice != null && Voice.Running)
                 {
                     Voice.Stop().Wait();
                 }
