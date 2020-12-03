@@ -18,7 +18,7 @@ jobs:
       with:
         dotnet-version: 3.1.301
     - name: Install dependencies
-      run: cd ../../Driscod; dotnet restore
+      run: echo $PWD; dotnet restore ../../Driscod/Driscod.sln
     - name: Build
       run: dotnet build --configuration Release --no-restore
     - name: Test
