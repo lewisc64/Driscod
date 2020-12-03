@@ -18,7 +18,7 @@ jobs:
       with:
         dotnet-version: 5.0.100
     - name: Install dependencies
-      run: echo `dir`; dotnet restore ../../Driscod/Driscod.sln
+      run: cd Driscod; dotnet restore
     - name: Build
       run: dotnet build --configuration Release --no-restore
     - name: Test
