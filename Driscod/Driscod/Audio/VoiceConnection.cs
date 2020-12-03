@@ -12,7 +12,7 @@ namespace Driscod.Audio
 
         private Voice Voice { get; set; }
 
-        private Bot Bot { get; set; }
+        private IBot Bot { get; set; }
 
         private AudioStreamer AudioStreamer { get; set; }
 

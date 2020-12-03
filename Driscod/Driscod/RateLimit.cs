@@ -1,5 +1,6 @@
 ﻿using Driscod.Extensions;
 using System;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
@@ -61,7 +62,7 @@ namespace Driscod
 
                     retryAfter = int.Parse(response.Headers.GetFirstValueOrNull("Retry-After") ?? "-1");
                 }
-                while (response.StatusCode == (System.Net.HttpStatusCode)429);
+                while (response.StatusCode == (HttpStatusCode)429);
             }
         }
     }

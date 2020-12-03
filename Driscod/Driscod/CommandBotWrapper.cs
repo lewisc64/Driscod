@@ -6,7 +6,7 @@ namespace Driscod
 {
     public abstract class CommandBotWrapper
     {
-        protected Bot Bot { get; private set; }
+        protected IBot Bot { get; private set; }
 
         public string CommandPrefix { get; set; } = "!";
 
@@ -14,7 +14,7 @@ namespace Driscod
 
         public bool IgnorePrefixInDms { get; set; } = true;
 
-        protected CommandBotWrapper(Bot bot)
+        protected CommandBotWrapper(IBot bot)
         {
             Bot = bot;
 
@@ -46,9 +46,9 @@ namespace Driscod
 
                     foreach (var trigger in triggers)
                     {
-                        var prefix = IgnorePrefixInDms && message.Channel.IsDm ? string.Empty : CommandPrefix;
-
-                        if (Regex.IsMatch(message.Content, @$"^{Regex.Escape(prefix)}{Regex.Escape(trigger)}(?:\s+|$)"))
+                        var ignorePrefix = IgnorePrefixInDms && message.Channel.IsDm;
+                        var regex = @$"^(?:{Regex.Escape(CommandPrefix)}){(ignorePrefix ? "?" : string.Empty)}{Regex.Escape(trigger)}(?:\s+|$)";
+                        if (Regex.IsMatch(message.Content, regex))
                         {
                             var commandArgs = Regex.Split(message.Content, @"\s+")
                                 .Skip(1)

@@ -12,7 +12,7 @@ namespace Driscod.Audio
 
         private bool _halted = false;
 
-        private Bot Bot { get; set; }
+        private IBot Bot { get; set; }
 
         private VoiceConnection VoiceConnection
         {

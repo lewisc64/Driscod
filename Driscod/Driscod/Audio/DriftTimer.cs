@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 
 namespace Driscod.Audio
 {
-    internal class DriftTimer
+    public class DriftTimer
     {
         private readonly Stopwatch _stopwatch = new Stopwatch();
 

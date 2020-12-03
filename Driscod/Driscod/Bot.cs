@@ -12,7 +12,45 @@ using System.Threading;
 
 namespace Driscod
 {
-    public class Bot
+    public interface IBot
+    {
+        User User { get; }
+
+        IEnumerable<Emoji> Emojis { get; }
+
+        IEnumerable<Guild> Guilds { get; }
+
+        IEnumerable<Channel> Channels { get; }
+
+        IEnumerable<User> KnownUsers { get; }
+
+        bool Ready { get; }
+
+        event EventHandler<Message> OnMessage;
+
+        event EventHandler<Message> OnMessageEdit;
+
+        event EventHandler<(Channel Channel, User User)> OnTyping;
+
+        void Start();
+
+        void Stop();
+
+        BsonValue SendJson(HttpMethod method, string pathFormat, string[] pathParams, BsonDocument doc = null, Dictionary<string, string> queryParams = null);
+
+        T GetObject<T>(string id)
+            where T : DiscordObject;
+
+        IEnumerable<T> GetObjects<T>()
+            where T : DiscordObject;
+
+        void DeleteObject<T>(string id);
+
+        void CreateOrUpdateObject<T>(BsonDocument doc, Shard discoveredBy = null)
+            where T : DiscordObject, new();
+    }
+
+    public class Bot : IBot
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
@@ -189,12 +227,12 @@ namespace Driscod
             return null;
         }
 
-        internal void DeleteObject<T>(string id)
+        public void DeleteObject<T>(string id)
         {
             Objects[typeof(T)].Remove(id);
         }
 
-        internal void CreateOrUpdateObject<T>(BsonDocument doc, Shard discoveredBy = null)
+        public void CreateOrUpdateObject<T>(BsonDocument doc, Shard discoveredBy = null)
             where T : DiscordObject, new()
         {
             var type = typeof(T);
