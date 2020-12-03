@@ -20,6 +20,6 @@ jobs:
     - name: Install dependencies
       run: cd Driscod; dotnet restore
     - name: Build
-      run: dotnet build --configuration Release --no-restore
+      run: cd Driscod; dotnet build --configuration Release --no-restore
     - name: Test
-      run: dotnet test --no-restore --verbosity normal
+      run: cd Driscod; dotnet test --no-restore --verbosity normal
