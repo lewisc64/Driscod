@@ -1,4 +1,4 @@
-name: .NET Core
+name: .NET 5.0
 
 on:
   push:
@@ -13,12 +13,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Setup .NET Core
+    - name: Setup .NET 5.0
       uses: actions/setup-dotnet@v1
       with:
-        dotnet-version: 3.1.301
+        dotnet-version: 5.0.100
     - name: Install dependencies
-      run: echo $PWD; dotnet restore ../../Driscod/Driscod.sln
+      run: echo `dir`; dotnet restore ../../Driscod/Driscod.sln
     - name: Build
       run: dotnet build --configuration Release --no-restore
     - name: Test
