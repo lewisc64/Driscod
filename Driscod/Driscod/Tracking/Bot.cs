@@ -193,7 +193,7 @@ namespace Driscod.Tracking
 
             if (RateLimitPathBucketMap.ContainsKey(key))
             {
-                RateLimits[RateLimitPathBucketMap[key]].LockAndWait(requestFunc);
+                RateLimits[RateLimitPathBucketMap[key]].PerformRequest(requestFunc).Wait();
             }
             else
             {

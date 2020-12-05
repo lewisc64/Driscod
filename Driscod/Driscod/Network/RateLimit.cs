@@ -4,12 +4,13 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Driscod.Network
 {
     public class RateLimit
     {
-        private readonly object _lock = new object();
+        private readonly SemaphoreSlim semaphore = new SemaphoreSlim(1, 1);
 
         public string Id { get; private set; }
 
@@ -40,9 +41,11 @@ namespace Driscod.Network
             }
         }
 
-        public void LockAndWait(Func<HttpResponseMessage> callback)
+        public async Task PerformRequest(Func<HttpResponseMessage> callback)
         {
-            lock (_lock)
+            await semaphore.WaitAsync();
+
+            try
             {
                 HttpResponseMessage response;
                 int retryAfter = -1;
@@ -50,11 +53,11 @@ namespace Driscod.Network
                 {
                     if (retryAfter != -1)
                     {
-                        Thread.Sleep(retryAfter);
+                        await Task.Delay(retryAfter);
                     }
-                    if (Remaining == 0 && ResetAt != null && ResetAt > DateTime.UtcNow)
+                    if (Remaining == 0 && ResetAt.HasValue && ResetAt > DateTime.UtcNow)
                     {
-                        Thread.Sleep((DateTime)ResetAt - DateTime.UtcNow);
+                        await Task.Delay(ResetAt.Value - DateTime.UtcNow);
                     }
 
                     response = callback();
@@ -63,6 +66,10 @@ namespace Driscod.Network
                     retryAfter = int.Parse(response.Headers.GetFirstValueOrNull("Retry-After") ?? "-1");
                 }
                 while (response.StatusCode == (HttpStatusCode)429);
+            }
+            finally
+            {
+                semaphore.Release();
             }
         }
     }

@@ -13,28 +13,28 @@ namespace Driscod.Tests.Network
         [TestCase(new[] { 200 }, null)]
         [TestCase(new[] { 429, 200 }, "50")]
         [TestCase(new[] { 429, 429, 429, 200 }, "0")]
-        public void RateLimit_RetryAfter(int[] statusSequence, string retryAfter)
+        public async Task RateLimit_PerformRequest_RetryAfter(int[] statusSequence, string retryAfter)
         {
             var rateLimit = new RateLimit("ID");
-            ResponseSequenceTest(rateLimit, statusSequence, null, null, null, retryAfter);
+            await ResponseSequenceTest(rateLimit, statusSequence, null, null, null, retryAfter);
         }
 
         [Test]
-        public void RateLimit_ResetAtSequence()
+        public async Task RateLimit_PerformRequest_ResetAtSequence()
         {
             var rateLimit = new RateLimit("ID");
-            ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "2", null);
-            ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "1", null);
-            ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "0", null);
+            await ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "2", null);
+            await ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "1", null);
+            await ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "0", null);
 
             var stopwatch = Stopwatch.StartNew();
-            ResponseSequenceTest(rateLimit, new[] { 429, 200 }, DateTime.Now.AddMilliseconds(50).Subtract(new DateTime(1970, 1, 1)).TotalSeconds.ToString(), null, "0", null);
+            await ResponseSequenceTest(rateLimit, new[] { 429, 200 }, DateTime.Now.AddMilliseconds(50).Subtract(new DateTime(1970, 1, 1)).TotalSeconds.ToString(), null, "0", null);
             stopwatch.Stop();
             Assert.GreaterOrEqual(stopwatch.ElapsedMilliseconds, 50);
         }
 
         [Test]
-        public async Task RateLimit_Concurrency()
+        public async Task RateLimit_PerformRequest_Concurrency()
         {
             var rateLimit = new RateLimit("ID");
 
@@ -42,10 +42,10 @@ namespace Driscod.Tests.Network
             bool firstEntered = false;
 
             await Task.WhenAll(
-                Task.Run(() =>
+                Task.Run(async () =>
                 {
                     var n = 0;
-                    rateLimit.LockAndWait(() =>
+                    await rateLimit.PerformRequest(() =>
                     {
                         firstEntered = true;
 
@@ -66,14 +66,14 @@ namespace Driscod.Tests.Network
                         return response;
                     });
                 }),
-                Task.Run(() =>
+                Task.Run(async () =>
                 {
                     while (!firstEntered)
                     {
                         // intentionally empty.
                     }
                     var stopwatch = Stopwatch.StartNew();
-                    rateLimit.LockAndWait(() =>
+                    await rateLimit.PerformRequest(() =>
                     {
                         stopwatch.Stop();
                         Assert.GreaterOrEqual(stopwatch.Elapsed.TotalMilliseconds, 50);
@@ -86,11 +86,11 @@ namespace Driscod.Tests.Network
                 }));
         }
 
-        private void ResponseSequenceTest(RateLimit rateLimit, int[] statusSequence, string resetAt, string limit, string remaining, string retryAfter)
+        private async Task ResponseSequenceTest(RateLimit rateLimit, int[] statusSequence, string resetAt, string limit, string remaining, string retryAfter)
         {
             var callNumber = 0;
 
-            rateLimit.LockAndWait(() =>
+            await rateLimit.PerformRequest(() =>
             {
                 var response = new HttpResponseMessage
                 {
