@@ -25,12 +25,12 @@ namespace Driscod.Tests.Network
             var rateLimit = new RateLimit("ID");
             await ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "2", null);
             await ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "1", null);
-            await ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "0", null);
 
-            var stopwatch = Stopwatch.StartNew();
-            await ResponseSequenceTest(rateLimit, new[] { 429, 200 }, DateTime.Now.AddMilliseconds(50).Subtract(new DateTime(1970, 1, 1)).TotalSeconds.ToString(), null, "0", null);
-            stopwatch.Stop();
-            Assert.GreaterOrEqual(stopwatch.ElapsedMilliseconds, 50);
+            var future = DateTime.Now.AddMilliseconds(50);
+            await ResponseSequenceTest(rateLimit, new[] { 200 }, future.Subtract(new DateTime(1970, 1, 1)).TotalSeconds.ToString(), null, "0", null);
+            await ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "2", null);
+
+            Assert.GreaterOrEqual(DateTime.Now, future);
         }
 
         [Test]
