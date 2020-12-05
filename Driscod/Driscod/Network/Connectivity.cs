@@ -1,7 +1,7 @@
 ﻿using MongoDB.Bson;
 using System.Net.Http;
 
-namespace Driscod
+namespace Driscod.Network
 {
     public static class Connectivity
     {

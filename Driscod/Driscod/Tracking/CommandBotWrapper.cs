@@ -2,7 +2,7 @@
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace Driscod
+namespace Driscod.Tracking
 {
     public abstract class CommandBotWrapper
     {

@@ -1,3 +1,4 @@
+using Driscod.Network;
 using NUnit.Framework;
 using System.Diagnostics;
 using System.Net;
@@ -5,7 +6,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Driscod.Tests
+namespace Driscod.Tests.Network
 {
     public class RateLimitTests
     {

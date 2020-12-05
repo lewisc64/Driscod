@@ -1,26 +1,27 @@
-﻿using Driscod.DiscordObjects;
+﻿using Driscod.Audio;
 using Driscod.Gateway;
+using Driscod.Tracking.Objects;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Driscod.Audio
+namespace Driscod.Tracking.Voice
 {
     public class VoiceConnection : IDisposable
     {
         private readonly string _channelId;
 
-        private Voice Voice { get; set; }
+        private VoiceGateway VoiceGateway { get; set; }
 
         private IBot Bot { get; set; }
 
         private AudioStreamer AudioStreamer { get; set; }
 
-        public string VoiceSessionId => Voice.SessionId;
+        public string VoiceSessionId => VoiceGateway.SessionId;
 
         public bool Playing => AudioStreamer.Playing;
 
-        public bool Stale => !Voice.Running;
+        public bool Stale => !VoiceGateway.Running;
 
         public Channel Channel => Bot.GetObject<Channel>(_channelId);
 
@@ -30,29 +31,29 @@ namespace Driscod.Audio
 
         public EventHandler OnStopAudio { get; set; }
 
-        internal VoiceConnection(Channel channel, Voice voice)
+        internal VoiceConnection(Channel channel, VoiceGateway voice)
         {
             _channelId = channel.Id;
 
             Bot = channel.Bot;
-            Voice = voice;
+            VoiceGateway = voice;
 
-            Voice.OnStop += (a, b) =>
+            VoiceGateway.OnStop += (a, b) =>
             {
                 Disconnect();
             };
 
-            if (!Voice.Running)
+            if (!VoiceGateway.Running)
             {
-                Voice.Start();
+                VoiceGateway.Start();
             }
 
-            while (!Voice.Ready)
+            while (!VoiceGateway.Ready)
             {
                 Thread.Sleep(200);
             }
 
-            AudioStreamer = Voice.CreateAudioStreamer();
+            AudioStreamer = VoiceGateway.CreateAudioStreamer();
 
             AudioStreamer.OnAudioStart += (a, b) =>
             {
@@ -104,9 +105,9 @@ namespace Driscod.Audio
         {
             lock (Guild.VoiceLock)
             {
-                if (Voice != null && Voice.Running)
+                if (VoiceGateway != null && VoiceGateway.Running)
                 {
-                    Voice.Stop().Wait();
+                    VoiceGateway.Stop().Wait();
                 }
                 if (Guild.VoiceConnection == this)
                 {
@@ -127,7 +128,7 @@ namespace Driscod.Audio
             {
                 Disconnect();
                 AudioStreamer = null;
-                Voice = null;
+                VoiceGateway = null;
             }
         }
 

@@ -1,6 +1,7 @@
-﻿using Driscod.Audio;
-using Driscod.Extensions;
+﻿using Driscod.Extensions;
 using Driscod.Gateway;
+using Driscod.Network;
+using Driscod.Tracking.Voice;
 using MongoDB.Bson;
 using System;
 using System.Collections.Generic;
@@ -8,7 +9,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 
-namespace Driscod.DiscordObjects
+namespace Driscod.Tracking.Objects
 {
     public enum ChannelType
     {
@@ -194,7 +195,7 @@ namespace Driscod.DiscordObjects
                     Logger.Warn(ex, "Timed out while fetching voice data.");
                 }
 
-                var voiceGateway = new Voice(
+                var voiceGateway = new VoiceGateway(
                         DiscoveredOnShard,
                         Connectivity.FormatVoiceSocketEndpoint(serverData["endpoint"].AsString),
                         Guild.Id,

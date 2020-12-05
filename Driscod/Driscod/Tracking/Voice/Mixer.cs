@@ -1,10 +1,11 @@
-﻿using Driscod.DiscordObjects;
+﻿using Driscod.Audio;
 using Driscod.Extensions;
+using Driscod.Tracking.Objects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Driscod.Audio
+namespace Driscod.Tracking.Voice
 {
     public class Mixer : IDisposable
     {

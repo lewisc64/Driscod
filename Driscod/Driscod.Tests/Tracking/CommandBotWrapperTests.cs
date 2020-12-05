@@ -1,10 +1,11 @@
-﻿using Driscod.DiscordObjects;
+﻿using Driscod.Tracking;
+using Driscod.Tracking.Objects;
 using Moq;
 using NUnit.Framework;
 using System;
 using System.Threading.Tasks;
 
-namespace Driscod.Tests
+namespace Driscod.Tests.Tracking
 {
     public class CommandBotWrapperTests
     {

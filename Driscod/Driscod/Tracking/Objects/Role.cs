@@ -1,6 +1,6 @@
 ﻿using MongoDB.Bson;
 
-namespace Driscod.DiscordObjects
+namespace Driscod.Tracking.Objects
 {
     public class Role : DiscordObject
     {

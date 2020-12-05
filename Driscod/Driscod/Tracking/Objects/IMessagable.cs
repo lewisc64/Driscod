@@ -1,4 +1,4 @@
-﻿namespace Driscod.DiscordObjects
+﻿namespace Driscod.Tracking.Objects
 {
     public interface IMessageable
     {

@@ -1,10 +1,10 @@
-﻿using Driscod.Audio;
-using Driscod.Extensions;
+﻿using Driscod.Extensions;
+using Driscod.Tracking.Voice;
 using MongoDB.Bson;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Driscod.DiscordObjects
+namespace Driscod.Tracking.Objects
 {
     public class Guild : DiscordObject
     {

@@ -1,5 +1,6 @@
-﻿using Driscod.DiscordObjects;
-using Driscod.Gateway;
+﻿using Driscod.Gateway;
+using Driscod.Network;
+using Driscod.Tracking.Objects;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 using System;
@@ -10,7 +11,7 @@ using System.Net.Http;
 using System.Text;
 using System.Threading;
 
-namespace Driscod
+namespace Driscod.Tracking
 {
     public interface IBot
     {
@@ -103,10 +104,10 @@ namespace Driscod
 
         public event EventHandler<(Channel Channel, User User)> OnTyping;
 
-        public Bot(string token, int intents = (int)Intents.All)
+        public Bot(string token, Intents intents)
         {
             _token = token ?? throw new ArgumentNullException(nameof(token), "Token cannot be null.");
-            _intents = intents;
+            _intents = (int)intents;
 
             CreateShards();
             CreateDispatchListeners();

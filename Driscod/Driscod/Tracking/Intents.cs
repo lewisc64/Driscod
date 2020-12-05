@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Driscod
+namespace Driscod.Tracking
 {
     [Flags]
     public enum Intents

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 
-namespace Driscod.DiscordObjects
+namespace Driscod.Tracking.Objects
 {
     public class User : DiscordObject, IMessageable
     {

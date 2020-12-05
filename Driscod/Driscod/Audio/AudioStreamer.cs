@@ -1,18 +1,18 @@
 ﻿using Concentus.Enums;
 using Concentus.Structs;
 using Driscod.Extensions;
+using Driscod.Network.Udp;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Driscod.Audio
 {
-    internal class AudioStreamer
+    public class AudioStreamer
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
@@ -20,7 +20,7 @@ namespace Driscod.Audio
 
         private readonly object _packetQueueLock = new object();
 
-        private UdpClient _udpClient;
+        private UdpSocket _udpSocket;
 
         private CancellationToken _cancellationToken;
 
@@ -54,17 +54,15 @@ namespace Driscod.Audio
 
         public event EventHandler OnAudioStop;
 
-        private UdpClient UdpClient
+        private UdpSocket UdpSocket
         {
             get
             {
-                if (_udpClient == null)
+                if (_udpSocket == null)
                 {
-                    _udpClient = new UdpClient(LocalPort);
-                    _udpClient.Connect(SocketEndPoint);
-                    Logger.Debug($"Connecting to {SocketEndPoint.Address}:{SocketEndPoint.Port}");
+                    _udpSocket = new UdpSocket(SocketEndPoint);
                 }
-                return _udpClient;
+                return _udpSocket;
             }
         }
 
@@ -170,7 +168,7 @@ namespace Driscod.Audio
 
                     if (packet.Length > 0)
                     {
-                        await UdpClient.SendAsync(packet, packet.Length);
+                        await UdpSocket.Send(packet);
                     }
 
                     sequence++;

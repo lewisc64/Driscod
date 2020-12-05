@@ -1,7 +1,7 @@
 # Driscod
 ![CI](https://github.com/lewisc64/Driscod/workflows/CI/badge.svg)
 
- C# Discord API library.
+C# Discord API wrapper.
 
 ## Examples
 
@@ -9,9 +9,32 @@
 
 These two approaches are identical in function.
 
+#### Event Handlers
+
+```cs
+using Driscod.Tracking;
+
+...
+
+var bot = new Bot(TOKEN, Intents.All);
+bot.Start();
+
+bot.OnMessage += (_, message) =>
+{
+    if (message.Author != bot.User && message.Content == "!ping")
+    {
+        message.Channel.SendMessage("pong");
+    }
+};
+```
+
 #### CommandBotWrapper
 
 ```cs
+using Driscod.Tracking;
+
+...
+
 public class TestBotWrapper : CommandBotWrapper
 {
     public TestBot(Bot bot)
@@ -28,25 +51,10 @@ public class TestBotWrapper : CommandBotWrapper
 
 ...
 
-var bot = new Bot(TOKEN);
+var bot = new Bot(TOKEN, Intents.All);
 bot.Start();
 
 var testBot = new TestBotWrapper(bot);
-```
-
-#### Event Handlers
-
-```cs
-var bot = new Bot(TOKEN);
-bot.Start();
-
-bot.OnMessage += (_, message) =>
-{
-    if (message.Author != bot.User && message.Content == "!ping")
-    {
-        message.Channel.SendMessage("pong");
-    }
-};
 ```
 
 ### Play Music
@@ -54,7 +62,7 @@ bot.OnMessage += (_, message) =>
 Joins the voice channel the user is in, and plays an audio file.
 
 ```cs
-var bot = new Bot(TOKEN);
+var bot = new Bot(TOKEN, Intents.All);
 bot.Start();
 
 Bot.OnMessage += (_, message) =>
@@ -75,7 +83,7 @@ Bot.OnMessage += (_, message) =>
 The connection does not have to be used immediately.
 
 ```cs
-var bot = new Bot(TOKEN);
+var bot = new Bot(TOKEN, Intents.All);
 bot.Start();
 
 Bot.OnMessage += (_, message) =>

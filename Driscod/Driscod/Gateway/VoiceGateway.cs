@@ -1,18 +1,18 @@
 ﻿using Driscod.Audio;
 using Driscod.Extensions;
+using Driscod.Network.Udp;
 using MongoDB.Bson;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
-using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Driscod.Gateway
 {
-    internal class Voice : Gateway
+    public class VoiceGateway : Gateway
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
@@ -64,7 +64,7 @@ namespace Driscod.Gateway
 
         public event EventHandler OnStop;
 
-        public Voice(Shard parentShard, string url, string serverId, string userId, string sessionId, string token)
+        public VoiceGateway(Shard parentShard, string url, string serverId, string userId, string sessionId, string token)
             : base(url)
         {
             _serverId = serverId;
@@ -265,11 +265,10 @@ namespace Driscod.Gateway
 
             byte[] response;
 
-            using (var udpClient = new UdpClient())
+            using (var udpSocket = new UdpSocket(UdpSocketIpAddress, UdpSocketPort) { ListenForPackets = true })
             {
-                var endpoint = GetUdpEndpoint();
-                await udpClient.SendAsync(datagram, datagram.Length, endpoint);
-                response = udpClient.Receive(ref endpoint);
+                await udpSocket.Send(datagram);
+                response = await udpSocket.WaitForNextPacket();
             }
 
             LocalPort = (response[response.Length - 2] << 8) + response[response.Length - 1];

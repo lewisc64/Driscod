@@ -1,8 +1,9 @@
-﻿using Driscod.DiscordObjects;
+﻿using Driscod.Tracking;
+using Driscod.Tracking.Objects;
 using Moq;
 using NUnit.Framework;
 
-namespace Driscod.Tests
+namespace Driscod.Tests.Tracking
 {
     public class DiscordObjectTests
     {

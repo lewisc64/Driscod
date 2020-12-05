@@ -1,7 +1,7 @@
 ﻿using Driscod.Gateway;
 using MongoDB.Bson;
 
-namespace Driscod.DiscordObjects
+namespace Driscod.Tracking.Objects
 {
     public interface IDiscordObject
     {
