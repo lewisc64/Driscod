@@ -58,6 +58,7 @@ namespace Driscod.Tests.Network
             var rateLimit = new RateLimit("ID");
 
             bool firstCompleted = false;
+            bool firstEntered = false;
 
             await Task.WhenAll(
                 Task.Run(() =>
@@ -65,6 +66,8 @@ namespace Driscod.Tests.Network
                     var n = 0;
                     rateLimit.LockAndWait(() =>
                     {
+                        firstEntered = true;
+
                         var response = new HttpResponseMessage();
 
                         n++;
@@ -85,7 +88,10 @@ namespace Driscod.Tests.Network
                 Task.Run(() =>
                 {
                     var stopwatch = Stopwatch.StartNew();
-                    Thread.Sleep(10);
+                    while (!firstEntered)
+                    {
+                        // intentionally empty.
+                    }
                     rateLimit.LockAndWait(() =>
                     {
                         stopwatch.Stop();
