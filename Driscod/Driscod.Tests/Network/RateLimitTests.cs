@@ -1,55 +1,36 @@
 using Driscod.Network;
 using NUnit.Framework;
+using System;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Driscod.Tests.Network
 {
     public class RateLimitTests
     {
-        [TestCase(new[] { 200 }, null, null, null, null)]
-        [TestCase(new[] { 429, 200 }, null, null, null, "50")]
-        [TestCase(new[] { 429, 429, 429, 200 }, null, null, null, "0")]
-        public void RateLimit_Wait(int[] statusSequence, string reset, string limit, string remaining, string retryAfter)
+        [TestCase(new[] { 200 }, null)]
+        [TestCase(new[] { 429, 200 }, "50")]
+        [TestCase(new[] { 429, 429, 429, 200 }, "0")]
+        public void RateLimit_RetryAfter(int[] statusSequence, string retryAfter)
         {
-            var callNumber = 0;
-
             var rateLimit = new RateLimit("ID");
-            rateLimit.LockAndWait(() =>
-            {
-                var response = new HttpResponseMessage
-                {
-                    StatusCode = (HttpStatusCode)statusSequence[callNumber],
-                };
+            ResponseSequenceTest(rateLimit, statusSequence, null, null, null, retryAfter);
+        }
 
-                if (reset != null)
-                {
-                    response.Headers.Add("X-RateLimit-Reset", reset);
-                }
+        [Test]
+        public void RateLimit_ResetAtSequence()
+        {
+            var rateLimit = new RateLimit("ID");
+            ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "2", null);
+            ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "1", null);
+            ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "0", null);
 
-                if (limit != null)
-                {
-                    response.Headers.Add("X-RateLimit-Limit", limit);
-                }
-
-                if (remaining != null)
-                {
-                    response.Headers.Add("X-RateLimit-Remaining", remaining);
-                }
-
-                if (retryAfter != null)
-                {
-                    response.Headers.Add("Retry-After", retryAfter);
-                }
-
-                callNumber++;
-                return response;
-            });
-
-            Assert.AreEqual(statusSequence.Length, callNumber, "Callback should be called enough times.");
+            var stopwatch = Stopwatch.StartNew();
+            ResponseSequenceTest(rateLimit, new[] { 429, 200 }, DateTime.Now.AddMilliseconds(50).Subtract(new DateTime(1970, 1, 1)).TotalSeconds.ToString(), null, "0", null);
+            stopwatch.Stop();
+            Assert.GreaterOrEqual(stopwatch.ElapsedMilliseconds, 50);
         }
 
         [Test]
@@ -87,11 +68,11 @@ namespace Driscod.Tests.Network
                 }),
                 Task.Run(() =>
                 {
-                    var stopwatch = Stopwatch.StartNew();
                     while (!firstEntered)
                     {
                         // intentionally empty.
                     }
+                    var stopwatch = Stopwatch.StartNew();
                     rateLimit.LockAndWait(() =>
                     {
                         stopwatch.Stop();
@@ -103,6 +84,44 @@ namespace Driscod.Tests.Network
                         };
                     });
                 }));
+        }
+
+        private void ResponseSequenceTest(RateLimit rateLimit, int[] statusSequence, string resetAt, string limit, string remaining, string retryAfter)
+        {
+            var callNumber = 0;
+
+            rateLimit.LockAndWait(() =>
+            {
+                var response = new HttpResponseMessage
+                {
+                    StatusCode = (HttpStatusCode)statusSequence[callNumber],
+                };
+
+                if (resetAt != null)
+                {
+                    response.Headers.Add("X-RateLimit-Reset", resetAt);
+                }
+
+                if (limit != null)
+                {
+                    response.Headers.Add("X-RateLimit-Limit", limit);
+                }
+
+                if (remaining != null)
+                {
+                    response.Headers.Add("X-RateLimit-Remaining", remaining);
+                }
+
+                if (retryAfter != null)
+                {
+                    response.Headers.Add("Retry-After", retryAfter);
+                }
+
+                callNumber++;
+                return response;
+            });
+
+            Assert.AreEqual(statusSequence.Length, callNumber, "Callback should be called enough times.");
         }
     }
 }

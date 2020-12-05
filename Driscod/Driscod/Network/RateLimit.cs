@@ -28,7 +28,7 @@ namespace Driscod.Network
         {
             if (headers.Contains("X-RateLimit-Reset"))
             {
-                ResetAt = new DateTime(1970, 1, 1, 0, 0, 0).AddSeconds(double.Parse(headers.GetFirstValue("X-RateLimit-Reset")));
+                ResetAt = new DateTime(1970, 1, 1).AddSeconds(double.Parse(headers.GetFirstValue("X-RateLimit-Reset")));
             }
             if (headers.Contains("X-RateLimit-Limit"))
             {
