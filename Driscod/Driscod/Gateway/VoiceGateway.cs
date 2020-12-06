@@ -150,7 +150,7 @@ namespace Driscod.Gateway
                         await ParentShard.Send((int)Shard.MessageType.VoiceStateUpdate, new JObject
                         {
                         { "guild_id", _serverId },
-                        { "channel_id", JObject.FromObject(null) },
+                        { "channel_id", null },
                         { "self_mute", false },
                         { "self_deaf", false },
                         });
