@@ -1,7 +1,6 @@
 ﻿using Driscod.Network;
-using MongoDB.Bson;
-using MongoDB.Bson.Serialization;
-using MongoDB.Bson.Serialization.Attributes;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -31,10 +30,10 @@ namespace Driscod.Tracking.Objects
             set
             {
                 _content = value;
-                UpdateFromDocument(Bot.SendJson(HttpMethod.Patch, Connectivity.ChannelMessagePathFormat, new[] { Channel.Id, Id }, new BsonDocument
+                UpdateFromDocument(Bot.SendJson(HttpMethod.Patch, Connectivity.ChannelMessagePathFormat, new[] { Channel.Id, Id }, new JObject
                 {
                     { "content", _content },
-                }).AsBsonDocument);
+                }));
             }
         }
 
@@ -49,23 +48,23 @@ namespace Driscod.Tracking.Objects
             return Content;
         }
 
-        internal override void UpdateFromDocument(BsonDocument doc)
+        internal override void UpdateFromDocument(JObject doc)
         {
-            Id = doc["id"].AsString;
-            _authorId = doc["author"]["id"].AsString;
-            _channelId = doc["channel_id"].AsString;
-            _content = doc["content"].AsString;
+            Id = doc["id"].ToObject<string>();
+            _authorId = doc["author"]["id"].ToObject<string>();
+            _channelId = doc["channel_id"].ToObject<string>();
+            _content = doc["content"].ToObject<string>();
 
-            Embeds = doc["embeds"].AsBsonArray.Select(x => BsonSerializer.Deserialize<MessageEmbed>(x.AsBsonDocument));
+            Embeds = doc["embeds"].Select(x => x.ToObject<MessageEmbed>());
         }
 
         private Message GetRelativeMessage(string paramName)
         {
-            var doc = Bot.SendJson(
+            var doc = Bot.SendJson<JArray>(
                 HttpMethod.Get,
                 Connectivity.ChannelMessagesPathFormat,
                 new[] { Channel.Id },
-                queryParams: new Dictionary<string, string>() { { paramName, Id }, { "limit", "1" } })?.AsBsonArray.FirstOrDefault()?.AsBsonDocument;
+                queryParams: new Dictionary<string, string>() { { paramName, Id }, { "limit", "1" } })?.ToObject<JObject[]>().FirstOrDefault();
 
             if (doc == null)
             {
@@ -88,10 +87,10 @@ namespace Driscod.Tracking.Objects
             { ContentType.Link, "link" },
         };
 
-        [BsonElement("type"), BsonIgnoreIfNull]
+        [JsonProperty("type")]
         private string _typeName;
 
-        [BsonIgnore]
+        [JsonIgnore]
         public ContentType Type
         {
             get
@@ -105,66 +104,66 @@ namespace Driscod.Tracking.Objects
             }
         }
 
-        [BsonElement("title"), BsonIgnoreIfNull]
+        [JsonProperty("title")]
         public string Title { get; set; }
 
-        [BsonElement("description"), BsonIgnoreIfNull]
+        [JsonProperty("description")]
         public string Description { get; set; }
 
-        [BsonElement("url"), BsonIgnoreIfNull]
+        [JsonProperty("url")]
         public string Url { get; set; }
 
-        [BsonElement("timestamp"), BsonIgnoreIfNull]
+        [JsonProperty("timestamp")]
         public string Timestamp { get; set; }
 
-        [BsonElement("color"), BsonIgnoreIfNull]
+        [JsonProperty("color")]
         public int Color { get; set; }
 
-        [BsonElement("footer"), BsonIgnoreIfNull]
+        [JsonProperty("footer")]
         public FooterInfo Footer { get; set; }
 
-        [BsonElement("image"), BsonIgnoreIfNull]
+        [JsonProperty("image")]
         public ImageInfo Image { get; set; }
 
-        [BsonElement("thumbnail"), BsonIgnoreIfNull]
+        [JsonProperty("thumbnail")]
         public ThumbnailInfo Thumbnail { get; set; }
 
-        [BsonElement("video"), BsonIgnoreIfNull]
+        [JsonProperty("video")]
         public VideoInfo Video { get; set; }
 
-        [BsonElement("provider"), BsonIgnoreIfNull]
+        [JsonProperty("provider")]
         public ProviderInfo Provider { get; set; }
 
-        [BsonElement("author"), BsonIgnoreIfNull]
+        [JsonProperty("author")]
         public AuthorInfo Author { get; set; }
 
-        [BsonElement("fields"), BsonIgnoreIfNull]
+        [JsonProperty("fields")]
         public IEnumerable<FieldInfo> Fields { get; set; }
 
         public class FooterInfo
         {
-            [BsonElement("text"), BsonRequired]
+            [JsonProperty("text"), JsonRequired]
             public string Text { get; set; }
 
-            [BsonElement("icon_url"), BsonIgnoreIfNull]
+            [JsonProperty("icon_url")]
             public string IconUrl { get; set; }
 
-            [BsonElement("proxy_icon_url"), BsonIgnoreIfNull]
+            [JsonProperty("proxy_icon_url")]
             public string ProxyIconUrl { get; set; }
         }
 
         public class ImageInfo
         {
-            [BsonElement("url"), BsonIgnoreIfNull]
+            [JsonProperty("url")]
             public string Url { get; set; }
 
-            [BsonElement("proxy_url"), BsonIgnoreIfNull]
+            [JsonProperty("proxy_url")]
             public string ProxyUrl { get; set; }
 
-            [BsonElement("height"), BsonIgnoreIfNull]
+            [JsonProperty("height")]
             public int Height { get; set; }
 
-            [BsonElement("width"), BsonIgnoreIfNull]
+            [JsonProperty("width")]
             public int Width { get; set; }
         }
 
@@ -174,49 +173,49 @@ namespace Driscod.Tracking.Objects
 
         public class VideoInfo
         {
-            [BsonElement("url"), BsonIgnoreIfNull]
+            [JsonProperty("url")]
             public string Url { get; set; }
 
-            [BsonElement("height"), BsonIgnoreIfNull]
+            [JsonProperty("height")]
             public int Height { get; set; }
 
-            [BsonElement("width"), BsonIgnoreIfNull]
+            [JsonProperty("width")]
             public int Width { get; set; }
         }
 
         public class ProviderInfo
         {
-            [BsonElement("name"), BsonIgnoreIfNull]
+            [JsonProperty("name")]
             public string Name { get; set; }
 
-            [BsonElement("url"), BsonIgnoreIfNull]
+            [JsonProperty("url")]
             public string Url { get; set; }
         }
 
         public class AuthorInfo
         {
-            [BsonElement("name"), BsonIgnoreIfNull]
+            [JsonProperty("name")]
             public string Name { get; set; }
 
-            [BsonElement("url"), BsonIgnoreIfNull]
+            [JsonProperty("url")]
             public string Url { get; set; }
 
-            [BsonElement("icon_url"), BsonIgnoreIfNull]
+            [JsonProperty("icon_url")]
             public string IconUrl { get; set; }
 
-            [BsonElement("proxy_icon_url"), BsonIgnoreIfNull]
+            [JsonProperty("proxy_icon_url")]
             public string ProxyIconUrl { get; set; }
         }
 
         public class FieldInfo
         {
-            [BsonElement("name"), BsonRequired]
+            [JsonProperty("name"), JsonRequired]
             public string Name { get; set; }
 
-            [BsonElement("value"), BsonRequired]
+            [JsonProperty("value"), JsonRequired]
             public string Value { get; set; }
 
-            [BsonElement("inline"), BsonIgnoreIfNull]
+            [JsonProperty("inline")]
             public bool Inline { get; set; }
         }
 

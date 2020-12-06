@@ -1,8 +1,8 @@
 ﻿using Driscod.Gateway;
 using Driscod.Network;
 using Driscod.Tracking.Objects;
-using MongoDB.Bson;
-using MongoDB.Bson.Serialization;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -37,7 +37,10 @@ namespace Driscod.Tracking
 
         void Stop();
 
-        BsonValue SendJson(HttpMethod method, string pathFormat, string[] pathParams, BsonDocument doc = null, Dictionary<string, string> queryParams = null);
+        JObject SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, Dictionary<string, string> queryParams = null);
+
+        T SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, Dictionary<string, string> queryParams = null)
+            where T : JContainer;
 
         T GetObject<T>(string id)
             where T : DiscordObject;
@@ -47,7 +50,7 @@ namespace Driscod.Tracking
 
         void DeleteObject<T>(string id);
 
-        void CreateOrUpdateObject<T>(BsonDocument doc, Shard discoveredBy = null)
+        void CreateOrUpdateObject<T>(JObject doc, Shard discoveredBy = null)
             where T : DiscordObject, new();
     }
 
@@ -115,7 +118,7 @@ namespace Driscod.Tracking
 
         public void Start()
         {
-            var remainingConnections = BsonDocument.Parse(HttpClient.GetAsync("gateway/bot").Result.Content.ReadAsStringAsync().Result)["session_start_limit"]["remaining"].AsInt32;
+            var remainingConnections = JObject.Parse(HttpClient.GetAsync("gateway/bot").Result.Content.ReadAsStringAsync().Result)["session_start_limit"]["remaining"].ToObject<int>();
             if (remainingConnections < _shards.Count)
             {
                 throw new InvalidOperationException("Bot cannot start, session creation limit met.");
@@ -147,18 +150,24 @@ namespace Driscod.Tracking
             RateLimits.Clear();
         }
 
-        public BsonValue SendJson(HttpMethod method, string pathFormat, string[] pathParams, BsonDocument doc = null, Dictionary<string, string> queryParams = null)
+        public JObject SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, Dictionary<string, string> queryParams = null)
+        {
+            return SendJson<JObject>(method, pathFormat, pathParams, doc, queryParams);
+        }
+
+        public T SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, Dictionary<string, string> queryParams = null)
+            where T : JContainer
         {
             if (pathFormat.StartsWith("/"))
             {
                 throw new ArgumentException($"Path cannot start with a forward slash.", nameof(pathFormat));
             }
 
-            var json = doc?.ToString();
+            var json = doc?.ToString(Formatting.None);
 
-            BsonValue output = null;
+            T output = default;
             var requestPath = string.Format(pathFormat, pathParams);
-
+            
             if (queryParams != null)
             {
                 requestPath += $"?{string.Join("&", queryParams.Where(kvp => kvp.Value != null).Select(kvp => $"{kvp.Key}={kvp.Value}"))}";
@@ -179,7 +188,7 @@ namespace Driscod.Tracking
 
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
-                    output = BsonSerializer.Deserialize<BsonValue>(response.Content.ReadAsStringAsync().Result);
+                    output = JsonConvert.DeserializeObject<T>(response.Content.ReadAsStringAsync().Result);
                 }
                 else
                 {
@@ -233,7 +242,7 @@ namespace Driscod.Tracking
             Objects[typeof(T)].Remove(id);
         }
 
-        public void CreateOrUpdateObject<T>(BsonDocument doc, Shard discoveredBy = null)
+        public void CreateOrUpdateObject<T>(JObject doc, Shard discoveredBy = null)
             where T : DiscordObject, new()
         {
             var type = typeof(T);
@@ -255,7 +264,7 @@ namespace Driscod.Tracking
                 table = Objects[type];
             }
 
-            var id = doc["id"].AsString;
+            var id = doc["id"].ToObject<string>();
 
             lock (table)
             {
@@ -285,16 +294,16 @@ namespace Driscod.Tracking
         {
             foreach (var shard in _shards)
             {
-                shard.AddListener<BsonDocument>(
+                shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     "READY",
                     data =>
                     {
-                        _userId = data["user"]["id"].AsString;
-                        CreateOrUpdateObject<User>(data["user"].AsBsonDocument);
+                        _userId = data["user"]["id"].ToObject<string>();
+                        CreateOrUpdateObject<User>(data["user"].ToObject<JObject>());
                     });
 
-                shard.AddListener<BsonDocument>(
+                shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     "MESSAGE_CREATE",
                     data =>
@@ -305,7 +314,7 @@ namespace Driscod.Tracking
                         }
                     });
 
-                shard.AddListener<BsonDocument>(
+                shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     "MESSAGE_UPDATE",
                     data =>
@@ -316,18 +325,18 @@ namespace Driscod.Tracking
                         }
                     });
 
-                shard.AddListener<BsonDocument>(
+                shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     "TYPING_START",
                     data =>
                     {
                         if (Ready)
                         {
-                            OnTyping?.Invoke(this, (GetObject<Channel>(data["channel_id"].AsString), GetObject<User>(data["user_id"].AsString)));
+                            OnTyping?.Invoke(this, (GetObject<Channel>(data["channel_id"].ToObject<string>()), GetObject<User>(data["user_id"].ToObject<string>())));
                         }
                     });
 
-                shard.AddListener<BsonDocument>(
+                shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     new[] { "GUILD_CREATE", "GUILD_UPDATE" },
                     data =>
@@ -335,22 +344,22 @@ namespace Driscod.Tracking
                         CreateOrUpdateObject<Guild>(data, discoveredBy: shard);
                     });
 
-                shard.AddListener<BsonDocument>(
+                shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     new[] { "GUILD_DELETE" },
                     data =>
                     {
-                        DeleteObject<Guild>(data["guild_id"].AsString);
+                        DeleteObject<Guild>(data["guild_id"].ToObject<string>());
                     });
 
-                shard.AddListener<BsonDocument>(
+                shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     new[] { "CHANNEL_CREATE", "CHANNEL_UPDATE" },
                     data =>
                     {
-                        if (data.Contains("guild_id"))
+                        if (data.ContainsKey("guild_id"))
                         {
-                            GetObject<Guild>(data["guild_id"].AsString).UpdateChannel(data);
+                            GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdateChannel(data);
                         }
                         else
                         {
@@ -358,15 +367,15 @@ namespace Driscod.Tracking
                         }
                     });
 
-                shard.AddListener<BsonDocument>(
+                shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     "CHANNEL_DELETE",
                     data =>
                     {
-                        GetObject<Guild>(data["guild_id"].AsString).DeleteChannel(data["id"].AsString);
+                        GetObject<Guild>(data["guild_id"].ToObject<string>()).DeleteChannel(data["id"].ToObject<string>());
                     });
 
-                shard.AddListener<BsonDocument>(
+                shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     "GUILD_EMOJIS_UPDATE",
                     data =>
@@ -375,36 +384,36 @@ namespace Driscod.Tracking
                         CreateOrUpdateObject<Guild>(data, discoveredBy: shard);
                     });
 
-                shard.AddListener<BsonDocument>(
+                shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     new[] { "GUILD_ROLE_CREATE", "GUILD_ROLE_UPDATE" },
                     data =>
                     {
-                        GetObject<Guild>(data["guild_id"].AsString).UpdateRole(data["role"].AsBsonDocument);
+                        GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdateRole(data["role"].ToObject<JObject>());
                     });
 
-                shard.AddListener<BsonDocument>(
+                shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     "GUILD_ROLE_DELETE",
                     data =>
                     {
-                        GetObject<Guild>(data["guild_id"].AsString).DeleteRole(data["role_id"].AsString);
+                        GetObject<Guild>(data["guild_id"].ToObject<string>()).DeleteRole(data["role_id"].ToObject<string>());
                     });
 
-                shard.AddListener<BsonDocument>(
+                shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     "PRESENCE_UPDATE",
                     data =>
                     {
-                        GetObject<Guild>(data["guild_id"].AsString).UpdatePresence(data);
+                        GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdatePresence(data);
                     });
 
-                shard.AddListener<BsonDocument>(
+                shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     "VOICE_STATE_UPDATE",
                     data =>
                     {
-                        GetObject<Guild>(data["guild_id"].AsString).UpdateVoiceState(data);
+                        GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdateVoiceState(data);
                     });
             }
         }

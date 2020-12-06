@@ -1,7 +1,7 @@
 ﻿using Driscod.Audio;
 using Driscod.Extensions;
 using Driscod.Network.Udp;
-using MongoDB.Bson;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,7 +24,7 @@ namespace Driscod.Gateway
 
         private readonly string _token;
 
-        private BsonDocument Identity => new BsonDocument
+        private JObject Identity => new JObject
         {
             { "server_id", _serverId },
             { "user_id", _userId },
@@ -92,19 +92,19 @@ namespace Driscod.Gateway
                 OnStop.Invoke(this, EventArgs.Empty);
             };
 
-            AddListener<BsonDocument>((int)MessageType.Hello, data =>
+            AddListener<JObject>((int)MessageType.Hello, data =>
             {
-                HeartbeatIntervalMilliseconds = (int)data["heartbeat_interval"].AsDouble;
+                HeartbeatIntervalMilliseconds = (int)data["heartbeat_interval"].ToObject<double>();
                 StartHeart();
                 KeepSocketOpen = true;
             });
 
-            AddListener<BsonDocument>((int)MessageType.Ready, async data =>
+            AddListener<JObject>((int)MessageType.Ready, async data =>
             {
-                UdpSocketIpAddress = data["ip"].AsString;
-                UdpSocketPort = (ushort)data["port"].AsInt32;
-                EndpointEncryptionModes = data["modes"].AsBsonArray.Select(x => x.AsString);
-                Ssrc = (uint)data["ssrc"].AsInt32;
+                UdpSocketIpAddress = data["ip"].ToObject<string>();
+                UdpSocketPort = data["port"].ToObject<ushort>();
+                EndpointEncryptionModes = data["modes"].ToObject<string[]>();
+                Ssrc = data["ssrc"].ToObject<uint>();
 
                 if (!AllowedEncryptionModes.Any())
                 {
@@ -117,11 +117,11 @@ namespace Driscod.Gateway
 
                 await FetchExternalAddress();
 
-                await Send((int)MessageType.SelectProtocol, new BsonDocument
+                await Send((int)MessageType.SelectProtocol, new JObject
                 {
                     { "protocol", "udp" },
                     { "data",
-                        new BsonDocument
+                        new JObject
                         {
                             { "address", ExternalAddress },
                             { "port", LocalPort },
@@ -131,9 +131,9 @@ namespace Driscod.Gateway
                 });
             });
 
-            AddListener<BsonDocument>((int)MessageType.SessionDescription, data =>
+            AddListener<JObject>((int)MessageType.SessionDescription, data =>
             {
-                SecretKey = data["secret_key"].AsBsonArray.Select(x => (byte)x.AsInt32).ToArray();
+                SecretKey = data["secret_key"].ToObject<byte[]>();
                 Ready = true;
             });
         }
@@ -142,22 +142,22 @@ namespace Driscod.Gateway
         {
             try
             {
-                await ParentShard.ListenForEvent<BsonDocument>(
+                await ParentShard.ListenForEvent<JObject>(
                     (int)Shard.MessageType.Dispatch,
                     "VOICE_STATE_UPDATE",
                     listenerCreateCallback: async () =>
                     {
-                        await ParentShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
+                        await ParentShard.Send((int)Shard.MessageType.VoiceStateUpdate, new JObject
                         {
                         { "guild_id", _serverId },
-                        { "channel_id", BsonNull.Value },
+                        { "channel_id", JObject.FromObject(null) },
                         { "self_mute", false },
                         { "self_deaf", false },
                         });
                     },
                     validator: data =>
                     {
-                        return data["guild_id"].AsString == _serverId;
+                        return data["guild_id"].ToObject<string>() == _serverId;
                     });
             }
             finally
@@ -231,9 +231,9 @@ namespace Driscod.Gateway
 
         private async Task BeginSpeaking()
         {
-            await Send((int)MessageType.Speaking, new BsonDocument
+            await Send((int)MessageType.Speaking, new JObject
             {
-                { "ssrc", (int)Ssrc }, // TODO: Make this not dodgy.
+                { "ssrc", Ssrc },
                 { "delay", 0 },
                 { "speaking", 1 },
             });
@@ -242,9 +242,9 @@ namespace Driscod.Gateway
 
         private async Task EndSpeaking()
         {
-            await Send((int)MessageType.Speaking, new BsonDocument
+            await Send((int)MessageType.Speaking, new JObject
             {
-                { "ssrc", (int)Ssrc },
+                { "ssrc", Ssrc },
                 { "delay", 0 },
                 { "speaking", 0 },
             });

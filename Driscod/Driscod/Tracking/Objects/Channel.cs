@@ -2,7 +2,7 @@
 using Driscod.Gateway;
 using Driscod.Network;
 using Driscod.Tracking.Voice;
-using MongoDB.Bson;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -37,7 +37,7 @@ namespace Driscod.Tracking.Objects
 
         public int Position { get; private set; }
 
-        public BsonArray PermissionOverwrites { get; private set; } // TODO
+        public JToken PermissionOverwrites { get; private set; } // TODO
 
         public string Name { get; private set; }
 
@@ -48,24 +48,24 @@ namespace Driscod.Tracking.Objects
             get
             {
                 string before = null;
-                BsonArray messages = null;
+                JArray messages = null;
 
                 while (messages == null || messages.Any())
                 {
-                    messages = Bot.SendJson(
+                    messages = Bot.SendJson<JArray>(
                         HttpMethod.Get,
                         Connectivity.ChannelMessagesPathFormat,
                         new[] { Id },
-                        queryParams: new Dictionary<string, string>() { { "before", before } }).AsBsonArray;
+                        queryParams: new Dictionary<string, string>() { { "before", before } });
 
-                    foreach (var doc in messages.Select(x => x.AsBsonDocument))
+                    foreach (var doc in messages)
                     {
                         var message = new Message
                         {
                             DiscoveredOnShard = DiscoveredOnShard,
                             Bot = Bot,
                         };
-                        message.UpdateFromDocument(doc);
+                        message.UpdateFromDocument(doc.ToObject<JObject>());
 
                         yield return message;
                         before = message.Id;
@@ -106,7 +106,7 @@ namespace Driscod.Tracking.Objects
                 throw new ArgumentOutOfRangeException(nameof(message), "Message must be less than or equal to 2000 characters.");
             }
 
-            var body = new BsonDocument();
+            var body = new JObject();
 
             if (message != null)
             {
@@ -115,7 +115,7 @@ namespace Driscod.Tracking.Objects
 
             if (embed != null)
             {
-                body["embed"] = embed.ToBsonDocument();
+                body["embed"] = JObject.FromObject(embed);
             }
 
             Bot.SendJson(HttpMethod.Post, Connectivity.ChannelMessagesPathFormat, new[] { Id }, body);
@@ -149,7 +149,7 @@ namespace Driscod.Tracking.Objects
                 {
                     if (++callCount >= 2)
                     {
-                        await DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new BsonDocument
+                        await DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new JObject
                         {
                             { "guild_id", Guild.Id },
                             { "channel_id", Id },
@@ -159,33 +159,33 @@ namespace Driscod.Tracking.Objects
                     }
                 };
 
-                BsonDocument stateData = null;
-                BsonDocument serverData = null;
+                JObject stateData = null;
+                JObject serverData = null;
 
                 try
                 {
                     Task.WhenAll(
                         Task.Run(async () =>
                         {
-                            stateData = await DiscoveredOnShard.ListenForEvent<BsonDocument>(
+                            stateData = await DiscoveredOnShard.ListenForEvent<JObject>(
                                 (int)Shard.MessageType.Dispatch,
                                 "VOICE_STATE_UPDATE",
                                 listenerCreateCallback: sendAction,
                                 validator: data =>
                                 {
-                                    return data["guild_id"].AsString == Guild.Id && data["channel_id"] == Id && data["user_id"].AsString == Bot.User.Id;
+                                    return data["guild_id"].ToObject<string>() == Guild.Id && data["channel_id"].ToObject<string>() == Id && data["user_id"].ToObject<string>() == Bot.User.Id;
                                 },
                                 timeout: TimeSpan.FromSeconds(10));
                         }),
                         Task.Run(async () =>
                         {
-                            serverData = await DiscoveredOnShard.ListenForEvent<BsonDocument>(
+                            serverData = await DiscoveredOnShard.ListenForEvent<JObject>(
                                 (int)Shard.MessageType.Dispatch,
                                 "VOICE_SERVER_UPDATE",
                                 listenerCreateCallback: sendAction,
                                 validator: data =>
                                 {
-                                    return data["guild_id"].AsString == Guild.Id;
+                                    return data["guild_id"].ToObject<string>() == Guild.Id;
                                 },
                                 timeout: TimeSpan.FromSeconds(10));
                         })).Wait(TimeSpan.FromSeconds(10));
@@ -197,11 +197,11 @@ namespace Driscod.Tracking.Objects
 
                 var voiceGateway = new VoiceGateway(
                         DiscoveredOnShard,
-                        Connectivity.FormatVoiceSocketEndpoint(serverData["endpoint"].AsString),
+                        Connectivity.FormatVoiceSocketEndpoint(serverData["endpoint"].ToObject<string>()),
                         Guild.Id,
                         Bot.User.Id,
-                        (stateData?["session_id"]?.AsString ?? oldSessionId) ?? throw new InvalidOperationException("Failed to get session ID."),
-                        serverData?["token"]?.AsString ?? throw new InvalidOperationException("Failed to get token."));
+                        (stateData?["session_id"]?.ToObject<string>() ?? oldSessionId) ?? throw new InvalidOperationException("Failed to get session ID."),
+                        serverData?["token"]?.ToObject<string>() ?? throw new InvalidOperationException("Failed to get token."));
 
                 Guild.VoiceConnection = new VoiceConnection(this, voiceGateway);
             }
@@ -209,18 +209,18 @@ namespace Driscod.Tracking.Objects
             return Guild.VoiceConnection;
         }
 
-        internal override void UpdateFromDocument(BsonDocument doc)
+        internal override void UpdateFromDocument(JObject doc)
         {
-            Id = doc["id"].AsString;
+            Id = doc["id"].ToObject<string>();
 
-            if (doc.Contains("guild_id"))
+            if (doc.ContainsKey("guild_id"))
             {
-                _guildId = doc["guild_id"].AsString;
+                _guildId = doc["guild_id"].ToObject<string>();
             }
 
-            if (doc.Contains("type"))
+            if (doc.ContainsKey("type"))
             {
-                switch (doc["type"].AsInt32)
+                switch (doc["type"].ToObject<int>())
                 {
                     case 0:
                         ChannelType = ChannelType.Text; break;
@@ -236,29 +236,29 @@ namespace Driscod.Tracking.Objects
                 }
             }
 
-            if (doc.Contains("topic"))
+            if (doc.ContainsKey("topic"))
             {
-                Topic = doc.GetValueOrNull("topic")?.AsString ?? "";
+                Topic = doc["topic"].ToObject<string>();
             }
 
-            if (doc.Contains("position"))
+            if (doc.ContainsKey("position"))
             {
-                Position = doc["position"].AsInt32;
+                Position = doc["position"].ToObject<int>();
             }
 
-            if (doc.Contains("permission_overwrites"))
+            if (doc.ContainsKey("permission_overwrites"))
             {
-                PermissionOverwrites = doc["permission_overwrites"].AsBsonArray;
+                PermissionOverwrites = doc["permission_overwrites"];
             }
 
-            if (doc.Contains("name"))
+            if (doc.ContainsKey("name"))
             {
-                Name = doc["name"].AsString;
+                Name = doc["name"].ToObject<string>();
             }
 
-            if (doc.Contains("bitrate"))
+            if (doc.ContainsKey("bitrate"))
             {
-                Bitrate = doc["bitrate"].AsInt32;
+                Bitrate = doc["bitrate"].ToObject<int>();
             }
         }
     }

@@ -1,4 +1,4 @@
-﻿using MongoDB.Bson;
+﻿using Newtonsoft.Json.Linq;
 using System.Net.Http;
 
 namespace Driscod.Network
@@ -20,9 +20,9 @@ namespace Driscod.Network
                 var client = new HttpClient();
 
                 var responseContent = client.GetAsync($"{HttpApiEndpoint}/gateway").Result.Content.ReadAsStringAsync().Result;
-                var doc = BsonDocument.Parse(responseContent);
+                var doc = JObject.Parse(responseContent);
 
-                return doc["url"].AsString;
+                return doc["url"].ToObject<string>();
             }
         }
 

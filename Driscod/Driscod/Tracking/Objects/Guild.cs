@@ -1,6 +1,6 @@
 ﻿using Driscod.Extensions;
 using Driscod.Tracking.Voice;
-using MongoDB.Bson;
+using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -56,9 +56,9 @@ namespace Driscod.Tracking.Objects
 
         public int PremiumSubscriptionCount { get; private set; }
 
-        internal void UpdatePresence(BsonDocument doc)
+        internal void UpdatePresence(JObject doc)
         {
-            var presence = Presences.FirstOrDefault(x => x.User.Id == doc["user"]["id"].AsString);
+            var presence = Presences.FirstOrDefault(x => x.User.Id == doc["user"]["id"].ToObject<string>());
             if (presence == null)
             {
                 presence = new Presence();
@@ -68,9 +68,9 @@ namespace Driscod.Tracking.Objects
             presence.UpdateFromDocument(doc);
         }
 
-        internal void UpdateRole(BsonDocument doc)
+        internal void UpdateRole(JObject doc)
         {
-            var role = Roles.FirstOrDefault(x => x.Id == doc["id"].AsString);
+            var role = Roles.FirstOrDefault(x => x.Id == doc["id"].ToObject<string>());
             if (role == null)
             {
                 Roles.Add(Create<Role>(Bot, doc));
@@ -81,11 +81,11 @@ namespace Driscod.Tracking.Objects
             }
         }
 
-        internal void UpdateVoiceState(BsonDocument doc)
+        internal void UpdateVoiceState(JObject doc)
         {
-            var userId = doc.Contains("member") ? doc["member"]["user"]["id"].AsString : doc["user_id"].AsString;
+            var userId = doc.ContainsKey("member") ? doc["member"]["user"]["id"].ToObject<string>() : doc["user_id"].ToObject<string>();
             var voiceState = VoiceStates.FirstOrDefault(x => x.User.Id == userId);
-            if (doc["channel_id"].IsBsonNull)
+            if (doc["channel_id"].Type == JTokenType.Null)
             {
                 VoiceStates.RemoveAll(x => x.User.Id == userId);
                 return;
@@ -108,12 +108,12 @@ namespace Driscod.Tracking.Objects
             }
         }
 
-        internal void UpdateChannel(BsonDocument doc)
+        internal void UpdateChannel(JObject doc)
         {
             Bot.CreateOrUpdateObject<Channel>(doc, discoveredBy: DiscoveredOnShard);
-            if (!_channelIds.Contains(doc["id"].AsString))
+            if (!_channelIds.Contains(doc["id"].ToObject<string>()))
             {
-                _channelIds.Add(doc["id"].AsString);
+                _channelIds.Add(doc["id"].ToObject<string>());
             }
         }
 
@@ -123,120 +123,120 @@ namespace Driscod.Tracking.Objects
             _channelIds.RemoveAll(x => x == channelId);
         }
 
-        internal override void UpdateFromDocument(BsonDocument doc)
+        internal override void UpdateFromDocument(JObject doc)
         {
-            Id = doc["id"].AsString;
+            Id = doc["id"].ToObject<string>();
 
-            if (doc.Contains("name"))
+            if (doc.ContainsKey("name"))
             {
-                Name = doc["name"].AsString;
+                Name = doc["name"].ToObject<string>();
             }
 
-            if (doc.Contains("members"))
+            if (doc.ContainsKey("members"))
             {
                 _memberIds.Clear();
-                foreach (var memberDoc in doc["members"].AsBsonArray.Cast<BsonDocument>())
+                foreach (var memberDoc in doc["members"].Cast<JObject>())
                 {
-                    _memberIds.Add(memberDoc["user"]["id"].AsString);
-                    Bot.CreateOrUpdateObject<User>(memberDoc["user"].AsBsonDocument);
+                    _memberIds.Add(memberDoc["user"]["id"].ToObject<string>());
+                    Bot.CreateOrUpdateObject<User>(memberDoc["user"].ToObject<JObject>());
                 }
             }
 
-            if (doc.Contains("presences"))
+            if (doc.ContainsKey("presences"))
             {
                 lock (Presences)
                 {
                     var found = new List<string>();
-                    foreach (var presenceDoc in doc["presences"].AsBsonArray.Cast<BsonDocument>())
+                    foreach (var presenceDoc in doc["presences"].Cast<JObject>())
                     {
-                        found.Add(presenceDoc["user"]["id"].AsString);
+                        found.Add(presenceDoc["user"]["id"].ToObject<string>());
                         UpdatePresence(presenceDoc);
                     }
                     Presences.RemoveAll(x => !found.Contains(x.User.Id));
                 }
             }
 
-            if (doc.Contains("roles"))
+            if (doc.ContainsKey("roles"))
             {
                 lock (Roles)
                 {
                     var found = new List<string>();
-                    foreach (var roleDoc in doc["roles"].AsBsonArray.Cast<BsonDocument>())
+                    foreach (var roleDoc in doc["roles"].Cast<JObject>())
                     {
-                        found.Add(roleDoc["id"].AsString);
+                        found.Add(roleDoc["id"].ToObject<string>());
                         UpdateRole(roleDoc);
                     }
                     Roles.RemoveAll(x => !found.Contains(x.Id));
                 }
             }
 
-            if (doc.Contains("emojis"))
+            if (doc.ContainsKey("emojis"))
             {
                 _emojiIds.Clear();
-                foreach (var emojiDoc in doc["emojis"].AsBsonArray.Cast<BsonDocument>())
+                foreach (var emojiDoc in doc["emojis"].Cast<JObject>())
                 {
                     Bot.CreateOrUpdateObject<Emoji>(emojiDoc);
-                    _emojiIds.Add(emojiDoc["id"].AsString);
+                    _emojiIds.Add(emojiDoc["id"].ToObject<string>());
                 }
             }
 
-            if (doc.Contains("channels"))
+            if (doc.ContainsKey("channels"))
             {
                 _channelIds.Clear();
-                foreach (var channelDoc in doc["channels"].AsBsonArray.Cast<BsonDocument>())
+                foreach (var channelDoc in doc["channels"].Cast<JObject>())
                 {
                     channelDoc["guild_id"] = Id;
                     UpdateChannel(channelDoc);
                 }
             }
 
-            if (doc.Contains("vanity_url_code"))
+            if (doc.ContainsKey("vanity_url_code"))
             {
-                VanityUrlCode = doc.GetValueOrNull("vanity_url_code")?.AsString;
+                VanityUrlCode = doc.ContainsKey("vanity_url_code") ? doc["vanity_url_code"].ToObject<string>() : null;
             }
 
-            if (doc.Contains("voice_states"))
+            if (doc.ContainsKey("voice_states"))
             {
-                foreach (var voiceStateDoc in doc["voice_states"].AsBsonArray.Cast<BsonDocument>())
+                foreach (var voiceStateDoc in doc["voice_states"].Cast<JObject>())
                 {
                     voiceStateDoc["guild_id"] = Id;
                     UpdateVoiceState(voiceStateDoc);
                 }
             }
 
-            if (doc.Contains("application_id"))
+            if (doc.ContainsKey("application_id"))
             {
-                ApplicationId = doc.GetValueOrNull("application_id")?.AsString;
+                ApplicationId = doc.ContainsKey("application_id") ? doc["application_id"].ToObject<string>() : null;
             }
 
-            if (doc.Contains("member_count"))
+            if (doc.ContainsKey("member_count"))
             {
-                MemberCount = doc["member_count"].AsInt32;
+                MemberCount = doc["member_count"].ToObject<int>();
             }
 
-            if (doc.Contains("region"))
+            if (doc.ContainsKey("region"))
             {
-                Region = doc["region"].AsString;
+                Region = doc["region"].ToObject<string>();
             }
 
-            if (doc.Contains("system_channel_flags"))
+            if (doc.ContainsKey("system_channel_flags"))
             {
-                SystemChannelFlags = doc["system_channel_flags"].AsInt32;
+                SystemChannelFlags = doc["system_channel_flags"].ToObject<int>();
             }
 
-            if (doc.Contains("unavailable"))
+            if (doc.ContainsKey("unavailable"))
             {
-                Unavailable = doc["unavailable"].AsBoolean;
+                Unavailable = doc["unavailable"].ToObject<bool>();
             }
 
-            if (doc.Contains("icon"))
+            if (doc.ContainsKey("icon"))
             {
-                Icon = doc.GetValueOrNull("icon")?.AsString;
+                Icon = doc.ContainsKey("icon") ? doc["icon"].ToObject<string>() : null;
             }
 
-            if (doc.Contains("default_message_notifications"))
+            if (doc.ContainsKey("default_message_notifications"))
             {
-                DefaultMessageNotifications = doc["default_message_notifications"].AsInt32;
+                DefaultMessageNotifications = doc["default_message_notifications"].ToObject<int>();
             }
         }
     }

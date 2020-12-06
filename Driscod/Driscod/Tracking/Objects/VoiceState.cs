@@ -1,4 +1,4 @@
-﻿using MongoDB.Bson;
+﻿using Newtonsoft.Json.Linq;
 
 namespace Driscod.Tracking.Objects
 {
@@ -16,18 +16,18 @@ namespace Driscod.Tracking.Objects
 
         public User User => Bot.GetObject<User>(_userId);
 
-        internal override void UpdateFromDocument(BsonDocument doc)
+        internal override void UpdateFromDocument(JObject doc)
         {
-            _guildId = doc["guild_id"].AsString;
-            _channelId = doc["channel_id"].AsString;
+            _guildId = doc["guild_id"].ToObject<string>();
+            _channelId = doc["channel_id"].ToObject<string>();
 
-            if (doc.Contains("member"))
+            if (doc.ContainsKey("member"))
             {
-                _userId = doc["member"]["user"]["id"].AsString;
+                _userId = doc["member"]["user"]["id"].ToObject<string>();
             }
             else
             {
-                _userId = doc["user_id"].AsString;
+                _userId = doc["user_id"].ToObject<string>();
             }
         }
     }

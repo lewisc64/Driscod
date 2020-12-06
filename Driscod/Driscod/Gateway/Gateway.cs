@@ -1,5 +1,5 @@
 ﻿using Driscod.Network;
-using MongoDB.Bson;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,7 +21,7 @@ namespace Driscod.Gateway
 
         private List<Task> Tasks { get; set; } = new List<Task>();
 
-        private List<Action<BsonDocument>> Listeners { get; set; } = new List<Action<BsonDocument>>();
+        private List<Action<JObject>> Listeners { get; set; } = new List<Action<JObject>>();
 
         protected int Sequence { get; set; }
 
@@ -91,7 +91,7 @@ namespace Driscod.Gateway
                     Logger.Debug($"[{Name}] <- {message.Message}");
                 }
 
-                var doc = BsonDocument.Parse(message.Message);
+                var doc = JObject.Parse(message.Message);
 
                 lock (_listenerLock)
                 {
@@ -162,7 +162,7 @@ namespace Driscod.Gateway
 
         public async Task<T> ListenForEvent<T>(int type, IEnumerable<string> eventNames, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
         {
-            Action<BsonDocument> handler = null;
+            Action<JObject> handler = null;
             try
             {
                 var tcs = new TaskCompletionSource<bool>();
@@ -214,39 +214,39 @@ namespace Driscod.Gateway
             }
         }
 
-        public Action<BsonDocument> AddListener<T>(int type, Action<T> handler)
+        public Action<JObject> AddListener<T>(int type, Action<T> handler)
         {
-            return AddListener<T>(type, new string[0], handler);
+            return AddListener(type, new string[0], handler);
         }
 
-        public Action<BsonDocument> AddListener<T>(int type, string eventName, Action<T> handler)
+        public Action<JObject> AddListener<T>(int type, string eventName, Action<T> handler)
         {
-            return AddListener<T>(type, new[] { eventName }, handler);
+            return AddListener(type, new[] { eventName }, handler);
         }
 
-        public Action<BsonDocument> AddListener<T>(int type, IEnumerable<string> eventNames, Action<T> handler)
+        public Action<JObject> AddListener<T>(int type, IEnumerable<string> eventNames, Action<T> handler)
         {
             var handlerName = $"{type}{(eventNames.Any() ? $" ({string.Join(", ", eventNames)})" : string.Empty)}";
 
-            Action<BsonDocument> listener = doc =>
+            Action<JObject> listener = doc =>
             {
-                if (doc.Contains("s") && !doc["s"].IsBsonNull)
+                if (doc.ContainsKey("s") && doc["s"].Type != JTokenType.Null)
                 {
-                    Sequence = doc["s"].AsInt32;
+                    Sequence = doc["s"].ToObject<int>();
                 }
-                if ((type == -1 || doc["op"] == type) && (!eventNames.Any() || eventNames.Contains(doc["t"].AsString)))
+                if ((type == -1 || doc["op"].ToObject<int>() == type) && (!eventNames.Any() || eventNames.Contains(doc["t"].ToObject<string>())))
                 {
                     Task.Run(() =>
                     {
                         try
                         {
-                            if (typeof(T) == typeof(BsonDocument))
+                            if (doc["d"].Type == JTokenType.Null)
                             {
-                                handler((T)(object)(doc["d"].IsBsonNull ? null : doc["d"].AsBsonDocument));
+                                handler(default);
                             }
                             else
                             {
-                                handler((T)BsonTypeMapper.MapToDotNetValue(doc["d"]));
+                                handler(doc["d"].ToObject<T>());
                             }
                         }
                         catch (Exception e)
@@ -270,7 +270,7 @@ namespace Driscod.Gateway
             return listener;
         }
 
-        public void RemoveListener(Action<BsonDocument> handler)
+        public void RemoveListener(Action<JObject> handler)
         {
             lock (_listenerLock)
             {
@@ -278,21 +278,21 @@ namespace Driscod.Gateway
             }
         }
 
-        internal async Task Send(int type, BsonValue data = null)
+        internal async Task Send<T>(int type, T data = default)
         {
-            var response = new BsonDocument
+            var response = new JObject
             {
                 { "op", type },
             };
             if (data != null)
             {
-                response["d"] = data;
+                response["d"] = JToken.FromObject(data);
             }
             await RateLimitWait().ContinueWith(_ =>
             {
                 if (DetailedLogging)
                 {
-                    Logger.Debug($"[{Name}] -> {response}");
+                    Logger.Debug($"[{Name}] -> {response.ToString(Newtonsoft.Json.Formatting.None)}");
                 }
                 Socket.Send(response.ToString());
             });

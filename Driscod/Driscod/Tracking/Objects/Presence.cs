@@ -1,4 +1,4 @@
-﻿using MongoDB.Bson;
+﻿using Newtonsoft.Json.Linq;
 
 namespace Driscod.Tracking.Objects
 {
@@ -18,10 +18,10 @@ namespace Driscod.Tracking.Objects
 
         public PresenceStatus Status { get; private set; }
 
-        internal override void UpdateFromDocument(BsonDocument doc)
+        internal override void UpdateFromDocument(JObject doc)
         {
-            _userId = doc["user"]["id"].AsString;
-            switch (doc["status"].AsString)
+            _userId = doc["user"]["id"].ToObject<string>();
+            switch (doc["status"].ToObject<string>())
             {
                 case "online":
                     Status = PresenceStatus.Online; break;

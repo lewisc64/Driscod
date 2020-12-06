@@ -1,4 +1,4 @@
-﻿using MongoDB.Bson;
+﻿using Newtonsoft.Json.Linq;
 
 namespace Driscod.Tracking.Objects
 {
@@ -18,16 +18,16 @@ namespace Driscod.Tracking.Objects
 
         public int Color { get; private set; }
 
-        internal override void UpdateFromDocument(BsonDocument doc)
+        internal override void UpdateFromDocument(JObject doc)
         {
-            Id = doc["id"].AsString;
-            Position = doc["position"].AsInt32;
-            Permissions = doc["permissions"].AsInt32;
-            Name = doc["name"].AsString;
-            Mentionable = doc["mentionable"].AsBoolean;
-            Managed = doc["managed"].AsBoolean;
-            Hoist = doc["hoist"].AsBoolean;
-            Color = doc["color"].AsInt32;
+            Id = doc["id"].ToObject<string>();
+            Position = doc["position"].ToObject<int>();
+            Permissions = doc["permissions"].ToObject<int>();
+            Name = doc["name"].ToObject<string>();
+            Mentionable = doc["mentionable"].ToObject<bool>();
+            Managed = doc["managed"].ToObject<bool>();
+            Hoist = doc["hoist"].ToObject<bool>();
+            Color = doc["color"].ToObject<int>();
         }
     }
 }

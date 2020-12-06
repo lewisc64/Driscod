@@ -1,5 +1,5 @@
 ﻿using Driscod.Network;
-using MongoDB.Bson;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -18,12 +18,12 @@ namespace Driscod.Gateway
 
         private readonly int _intents;
 
-        private BsonDocument Identity => new BsonDocument
+        private JObject Identity => new JObject
         {
             { "token", _token },
-            { "shard", new BsonArray { _shardNumber, _totalShards } },
+            { "shard", JToken.FromObject(new[] { _shardNumber, _totalShards })},
             {
-                "properties", new BsonDocument
+                "properties", new JObject
                 {
                     { "$os", Environment.OSVersion.VersionString },
                     { "$browser", "c#" },
@@ -51,13 +51,13 @@ namespace Driscod.Gateway
             _totalShards = totalShards;
             _intents = intents;
 
-            AddListener<BsonDocument>((int)MessageType.Hello, async data =>
+            AddListener<JObject>((int)MessageType.Hello, async data =>
             {
-                HeartbeatIntervalMilliseconds = data["heartbeat_interval"].AsInt32;
+                HeartbeatIntervalMilliseconds = data["heartbeat_interval"].ToObject<int>();
 
                 if (KeepSocketOpen)
                 {
-                    await Send((int)MessageType.Resume, new BsonDocument
+                    await Send((int)MessageType.Resume, new JObject
                     {
                         { "token", _token },
                         { "session_id", SessionId },
@@ -73,14 +73,14 @@ namespace Driscod.Gateway
                 StartHeart();
             });
 
-            AddListener<BsonDocument>((int)MessageType.Dispatch, "READY", data =>
+            AddListener<JObject>((int)MessageType.Dispatch, "READY", data =>
             {
                 if (DetailedLogging)
                 {
                     Logger.Info($"[{Name}] Ready.");
                 }
                 Ready = true;
-                SessionId = data["session_id"].AsString;
+                SessionId = data["session_id"].ToObject<string>();
             });
 
             AddListener<object>((int)MessageType.InvalidSession, _ =>
@@ -92,7 +92,7 @@ namespace Driscod.Gateway
 
         protected override async Task Heartbeat()
         {
-            await ListenForEvent<BsonDocument>(
+            await ListenForEvent<JObject>(
                 (int)MessageType.HeartbeatAck,
                 listenerCreateCallback: async () =>
                 {

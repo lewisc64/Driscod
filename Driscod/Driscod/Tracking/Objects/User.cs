@@ -1,5 +1,5 @@
 ﻿using Driscod.Extensions;
-using MongoDB.Bson;
+using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -11,7 +11,7 @@ namespace Driscod.Tracking.Objects
         public IEnumerable<Presence> Presences => Bot.Guilds
             .Where(x => x.Members.Contains(this))
             .Select(x => x.Presences.FirstOrDefault(x => x.User == this));
-
+        
         public Presence Presence => Presences.FirstOrDefault();
 
         public string Username { get; private set; }
@@ -24,10 +24,10 @@ namespace Driscod.Tracking.Objects
         {
             get
             {
-                var result = Bot.SendJson(HttpMethod.Post, @"users/{0}/channels", new[] { Bot.User.Id }, new BsonDocument { { "recipient_id", Id } });
+                var result = Bot.SendJson(HttpMethod.Post, @"users/{0}/channels", new[] { Bot.User.Id }, new JObject { { "recipient_id", Id } });
 
-                Bot.CreateOrUpdateObject<Channel>(result.AsBsonDocument);
-                return Bot.GetObject<Channel>(result["id"].AsString);
+                Bot.CreateOrUpdateObject<Channel>(result);
+                return Bot.GetObject<Channel>(result["id"].ToObject<string>());
             }
         }
 
@@ -51,12 +51,12 @@ namespace Driscod.Tracking.Objects
             return $"{Username}:{Discriminator}";
         }
 
-        internal override void UpdateFromDocument(BsonDocument doc)
+        internal override void UpdateFromDocument(JObject doc)
         {
-            Id = doc["id"].AsString;
-            Username = doc["username"].AsString;
-            Discriminator = doc["discriminator"].AsString;
-            Avatar = doc.GetValueOrNull("avatar")?.AsString;
+            Id = doc["id"].ToObject<string>();
+            Username = doc["username"].ToObject<string>();
+            Discriminator = doc["discriminator"].ToObject<string>();
+            Avatar = doc.ContainsKey("avatar") ? doc["avatar"].ToObject<string>() : null;
         }
     }
 }

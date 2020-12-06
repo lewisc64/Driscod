@@ -1,5 +1,5 @@
 ﻿using Driscod.Gateway;
-using MongoDB.Bson;
+using Newtonsoft.Json.Linq;
 
 namespace Driscod.Tracking.Objects
 {
@@ -22,9 +22,9 @@ namespace Driscod.Tracking.Objects
         {
         }
 
-        internal abstract void UpdateFromDocument(BsonDocument doc);
+        internal abstract void UpdateFromDocument(JObject doc);
 
-        internal static T Create<T>(IBot bot, BsonDocument doc, Shard discoveredBy = null)
+        internal static T Create<T>(IBot bot, JObject doc, Shard discoveredBy = null)
             where T : DiscordObject, new()
         {
             var obj = new T();
