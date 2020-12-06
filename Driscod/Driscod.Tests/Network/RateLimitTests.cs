@@ -76,7 +76,7 @@ namespace Driscod.Tests.Network
                     await rateLimit.PerformRequest(() =>
                     {
                         stopwatch.Stop();
-                        Assert.GreaterOrEqual(stopwatch.Elapsed.TotalMilliseconds, 50);
+                        Assert.GreaterOrEqual(stopwatch.Elapsed.TotalMilliseconds, 50 - 2);
                         Assert.IsTrue(firstCompleted);
                         return new HttpResponseMessage
                         {
