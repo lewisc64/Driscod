@@ -1,5 +1,4 @@
-﻿using Driscod.Extensions;
-using Driscod.Gateway;
+﻿using Driscod.Gateway;
 using Driscod.Network;
 using Driscod.Tracking.Voice;
 using Newtonsoft.Json.Linq;

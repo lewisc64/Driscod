@@ -1,5 +1,4 @@
-﻿using Driscod.Extensions;
-using Newtonsoft.Json.Linq;
+﻿using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -11,7 +10,7 @@ namespace Driscod.Tracking.Objects
         public IEnumerable<Presence> Presences => Bot.Guilds
             .Where(x => x.Members.Contains(this))
             .Select(x => x.Presences.FirstOrDefault(x => x.User == this));
-        
+
         public Presence Presence => Presences.FirstOrDefault();
 
         public string Username { get; private set; }

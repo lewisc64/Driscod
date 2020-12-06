@@ -167,7 +167,7 @@ namespace Driscod.Tracking
 
             T output = default;
             var requestPath = string.Format(pathFormat, pathParams);
-            
+
             if (queryParams != null)
             {
                 requestPath += $"?{string.Join("&", queryParams.Where(kvp => kvp.Value != null).Select(kvp => $"{kvp.Key}={kvp.Value}"))}";

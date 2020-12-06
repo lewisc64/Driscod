@@ -1,5 +1,4 @@
-﻿using Driscod.Extensions;
-using Driscod.Tracking.Voice;
+﻿using Driscod.Tracking.Voice;
 using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 using System.Linq;
