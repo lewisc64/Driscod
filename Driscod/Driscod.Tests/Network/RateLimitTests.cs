@@ -30,7 +30,7 @@ namespace Driscod.Tests.Network
             await ResponseSequenceTest(rateLimit, new[] { 200 }, future.Subtract(new DateTime(1970, 1, 1)).TotalSeconds.ToString(), null, "0", null);
             await ResponseSequenceTest(rateLimit, new[] { 200 }, null, null, "2", null);
 
-            Assert.GreaterOrEqual(DateTime.UtcNow, future);
+            Assert.GreaterOrEqual(DateTime.UtcNow, future.Subtract(TimeSpan.FromMilliseconds(5)));
         }
 
         [Test]
