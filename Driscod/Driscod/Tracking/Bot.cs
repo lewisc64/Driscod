@@ -33,6 +33,8 @@ namespace Driscod.Tracking
 
         event EventHandler<(Channel Channel, User User)> OnTyping;
 
+        event EventHandler<(Channel Channel, User User, bool IsDeaf, bool IsMuted)> OnVoiceStateChange;
+
         void Start();
 
         void Stop();
@@ -106,6 +108,8 @@ namespace Driscod.Tracking
         public event EventHandler<Message> OnMessageEdit;
 
         public event EventHandler<(Channel Channel, User User)> OnTyping;
+
+        public event EventHandler<(Channel Channel, User User, bool IsDeaf, bool IsMuted)> OnVoiceStateChange;
 
         public Bot(string token, Intents intents)
         {
@@ -413,6 +417,12 @@ namespace Driscod.Tracking
                     "VOICE_STATE_UPDATE",
                     data =>
                     {
+                        var userId = data.ContainsKey("member") ? data["member"]["user"]["id"].ToObject<string>() : data["user_id"].ToObject<string>();
+                        var deaf = data["self_deaf"].ToObject<bool>() || data["deaf"].ToObject<bool>();
+                        var mute = data["self_mute"].ToObject<bool>() || data["mute"].ToObject<bool>();
+
+                        OnVoiceStateChange?.Invoke(this, (GetObject<Channel>(data["channel_id"].ToObject<string>()), GetObject<User>(userId), deaf, mute));
+
                         GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdateVoiceState(data);
                     });
             }
