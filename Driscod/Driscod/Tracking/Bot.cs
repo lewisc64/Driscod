@@ -421,9 +421,9 @@ namespace Driscod.Tracking
                         var deaf = data["self_deaf"].ToObject<bool>() || data["deaf"].ToObject<bool>();
                         var mute = data["self_mute"].ToObject<bool>() || data["mute"].ToObject<bool>();
 
-                        OnVoiceStateChange?.Invoke(this, (GetObject<Channel>(data["channel_id"].ToObject<string>()), GetObject<User>(userId), deaf, mute));
-
                         GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdateVoiceState(data);
+
+                        OnVoiceStateChange?.Invoke(this, (GetObject<Channel>(data["channel_id"].ToObject<string>()), GetObject<User>(userId), deaf, mute));
                     });
             }
         }
