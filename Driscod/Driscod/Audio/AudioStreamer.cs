@@ -1,5 +1,4 @@
-﻿using Concentus.Enums;
-using Concentus.Structs;
+﻿using Driscod.Audio.Encoding;
 using Driscod.Extensions;
 using Driscod.Network.Udp;
 using System;
@@ -22,15 +21,15 @@ namespace Driscod.Audio
 
         private UdpSocket _udpSocket;
 
-        private CancellationToken _cancellationToken;
+        private CancellationToken _globalCancellationToken;
 
         private int SamplesPerPacket => SampleRate * PacketIntervalMilliseconds / 1000;
 
-        private int MaxQueuedOpusPackets => (int)MaxPacketBuffer.TotalMilliseconds / PacketIntervalMilliseconds;
+        private int MaxQueuedPackets => (int)MaxPacketBuffer.TotalMilliseconds / PacketIntervalMilliseconds;
 
-        private readonly Queue<byte[]> QueuedOpusPackets = new Queue<byte[]>();
+        private readonly Queue<byte[]> QueuedPackets = new Queue<byte[]>();
 
-        public bool Playing { get; set; } = false;
+        public bool SendingAudio { get; set; } = false;
 
         public int SampleRate { get; set; } = 48000;
 
@@ -73,54 +72,44 @@ namespace Driscod.Audio
 
         public AudioStreamer(CancellationToken cancellationToken)
         {
-            _cancellationToken = cancellationToken;
+            _globalCancellationToken = cancellationToken;
 
             AudioLoop().Forget();
         }
 
-        public void SendAudio(Stream sampleStream, bool queueSilence = true)
+        public void SendAudio(Stream sampleStream, bool queueSilence = true, CancellationToken cancellationToken = default)
         {
             const int ChunkSize = 16;
+
+            var encoder = new OpusAudioEncoder(SampleRate, Channels);
 
             lock (_audioSendLock)
             {
                 var chunk = new Queue<byte[]>();
+                var bytesReadOfChunk = 0;
 
-                var encoder = OpusEncoder.Create(SampleRate, Channels, OpusApplication.OPUS_APPLICATION_AUDIO);
-
-                var i = 0;
-                while (!_cancellationToken.IsCancellationRequested)
+                while (!_globalCancellationToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                 {
                     var sampleBytes = new byte[SamplesPerPacket * Channels * 4];
-                    var bytesRead = sampleStream.Read(sampleBytes, i, sampleBytes.Length);
+                    var bytesReadOfPacket = sampleStream.Read(sampleBytes, bytesReadOfChunk, sampleBytes.Length);
 
-                    var samples = new float[sampleBytes.Length / 4];
-                    for (var j = 0; j < sampleBytes.Length; j += 4)
-                    {
-                        samples[j / 4] = BitConverter.ToSingle(sampleBytes, j);
-                    }
-
-                    var opusPacket = new byte[(int)(SamplesPerPacket * 1.1)];
-                    int opusPacketSize = encoder.Encode(samples, 0, SamplesPerPacket, opusPacket, 0, opusPacket.Length);
-                    opusPacket = opusPacket.Take(opusPacketSize).ToArray();
-
-                    chunk.Enqueue(opusPacket);
+                    chunk.Enqueue(encoder.Encode(CastSamplesAsFloats(sampleBytes)));
 
                     if (chunk.Count >= ChunkSize)
                     {
-                        EnqueueOpusPackets(chunk);
+                        EnqueuePackets(chunk);
                         chunk.Clear();
                     }
 
-                    if (bytesRead < sampleBytes.Length)
+                    if (bytesReadOfPacket < sampleBytes.Length)
                     {
                         break;
                     }
 
-                    i += SamplesPerPacket * Channels;
+                    bytesReadOfChunk += SamplesPerPacket * Channels;
                 }
 
-                EnqueueOpusPackets(chunk);
+                EnqueuePackets(chunk);
 
                 if (queueSilence)
                 {
@@ -129,25 +118,25 @@ namespace Driscod.Audio
             }
         }
 
-        public void SendAudio(float[] samples, bool queueSilence = false)
+        public void SendAudio(float[] samples, bool queueSilence = false, CancellationToken cancellationToken = default)
         {
             SendAudio(new MemoryStream(samples.Select(x => BitConverter.GetBytes(x)).Aggregate(new List<byte>(), (acc, value) =>
             {
                 acc.AddRange(value);
                 return acc;
-            }).ToArray()), queueSilence: queueSilence);
+            }).ToArray()), queueSilence: queueSilence, cancellationToken: cancellationToken);
         }
 
-        public void SendAudio(IAudioSource audioSource, bool queueSilence = false)
+        public void SendAudio(IAudioSource audioSource, bool queueSilence = false, CancellationToken cancellationToken = default)
         {
-            SendAudio(audioSource.GetSampleStream(SampleRate, Channels), queueSilence: queueSilence);
+            SendAudio(audioSource.GetSampleStream(SampleRate, Channels), queueSilence: queueSilence, cancellationToken: cancellationToken);
         }
 
         public void ClearAudio()
         {
-            lock (QueuedOpusPackets)
+            lock (_packetQueueLock)
             {
-                QueuedOpusPackets.Clear();
+                QueuedPackets.Clear();
             }
         }
 
@@ -160,11 +149,11 @@ namespace Driscod.Audio
 
                 var timer = new DriftTimer(TimeSpan.FromMilliseconds(PacketIntervalMilliseconds));
 
-                while (!_cancellationToken.IsCancellationRequested)
+                while (!_globalCancellationToken.IsCancellationRequested)
                 {
                     var packet = GetNextPacket(sequence, timestamp);
 
-                    await timer.Wait(_cancellationToken);
+                    await timer.Wait(_globalCancellationToken);
 
                     if (packet.Length > 0)
                     {
@@ -175,6 +164,10 @@ namespace Driscod.Audio
                     timestamp += (uint)SamplesPerPacket;
                 }
             }
+            catch (TaskCanceledException)
+            {
+                // ignore
+            }
             catch (Exception ex)
             {
                 Logger.Error(ex, $"Exception in audio loop: {ex}");
@@ -183,9 +176,9 @@ namespace Driscod.Audio
             {
                 Logger.Debug("Audio loop stopped.");
                 ClearAudio();
-                if (Playing)
+                if (SendingAudio)
                 {
-                    Playing = false;
+                    SendingAudio = false;
                     Task.Run(() =>
                     {
                         OnAudioStop?.Invoke(this, EventArgs.Empty);
@@ -199,23 +192,23 @@ namespace Driscod.Audio
             SendAudio(Enumerable.Repeat(0f, SamplesPerPacket * 10).ToArray(), queueSilence: false);
         }
 
-        private void EnqueueOpusPackets(IEnumerable<byte[]> packets)
+        private void EnqueuePackets(IEnumerable<byte[]> packets)
         {
             foreach (var packet in packets)
             {
-                EnqueueOpusPacket(packet);
+                EnqueuePacket(packet);
             }
         }
 
-        private void EnqueueOpusPacket(byte[] packet)
+        private void EnqueuePacket(byte[] packet)
         {
-            while (QueuedOpusPackets.Count > MaxQueuedOpusPackets)
+            while (QueuedPackets.Count > MaxQueuedPackets)
             {
                 Thread.Sleep(PacketIntervalMilliseconds / 2);
             }
             lock (_packetQueueLock)
             {
-                QueuedOpusPackets.Enqueue(packet);
+                QueuedPackets.Enqueue(packet);
             }
         }
 
@@ -223,24 +216,24 @@ namespace Driscod.Audio
         {
             lock (_packetQueueLock)
             {
-                if (QueuedOpusPackets.Any())
+                if (QueuedPackets.Any())
                 {
-                    if (!Playing)
+                    if (!SendingAudio)
                     {
-                        Playing = true;
+                        SendingAudio = true;
                         Task.Run(() =>
                         {
                             OnAudioStart?.Invoke(this, EventArgs.Empty);
                         }).Forget();
                     }
 
-                    return AssemblePacket(QueuedOpusPackets.Dequeue(), sequence, timestamp);
+                    return AssemblePacket(QueuedPackets.Dequeue(), sequence, timestamp);
                 }
                 else
                 {
-                    if (Playing)
+                    if (SendingAudio)
                     {
-                        Playing = false;
+                        SendingAudio = false;
                         Task.Run(() =>
                         {
                             OnAudioStop?.Invoke(this, EventArgs.Empty);
@@ -252,13 +245,23 @@ namespace Driscod.Audio
             return new byte[0];
         }
 
-        private byte[] AssemblePacket(byte[] opusData, ushort sequence, uint timestamp)
+        private byte[] AssemblePacket(byte[] data, ushort sequence, uint timestamp)
         {
             return new RtpPacketGenerator()
                 .CreateHeader(sequence, timestamp, Ssrc)
-                .AddPayload(opusData)
+                .AddPayload(data)
                 .EncryptPayload(EncryptionMode, EncryptionKey)
                 .Finalize();
+        }
+
+        private float[] CastSamplesAsFloats(byte[] sampleBytes)
+        {
+            var samples = new float[sampleBytes.Length / 4];
+            for (var j = 0; j < sampleBytes.Length; j += 4)
+            {
+                samples[j / 4] = BitConverter.ToSingle(sampleBytes, j);
+            }
+            return samples;
         }
     }
 }

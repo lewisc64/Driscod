@@ -19,6 +19,8 @@ namespace Driscod.Tracking.Objects
 
         public string Avatar { get; private set; }
 
+        public bool IsBot { get; private set; }
+
         public Channel DmChannel
         {
             get
@@ -56,6 +58,7 @@ namespace Driscod.Tracking.Objects
             Username = doc["username"].ToObject<string>();
             Discriminator = doc["discriminator"].ToObject<string>();
             Avatar = doc.ContainsKey("avatar") ? doc["avatar"].ToObject<string>() : null;
+            IsBot = doc.ContainsKey("bot") && doc["bot"].ToObject<bool>();
         }
     }
 }

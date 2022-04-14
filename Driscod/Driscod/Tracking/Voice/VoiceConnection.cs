@@ -19,7 +19,7 @@ namespace Driscod.Tracking.Voice
 
         public string VoiceSessionId => VoiceGateway.SessionId;
 
-        public bool Playing => AudioStreamer.Playing;
+        public bool Playing => AudioStreamer.SendingAudio;
 
         public bool Stale => !VoiceGateway.Running;
 
@@ -66,7 +66,7 @@ namespace Driscod.Tracking.Voice
             };
         }
 
-        public async Task PlayAudio(IAudioSource audioSource)
+        public async Task PlayAudio(IAudioSource audioSource, CancellationToken cancellationToken = default)
         {
             ThrowIfStale();
 
@@ -79,21 +79,32 @@ namespace Driscod.Tracking.Voice
 
             AudioStreamer.OnAudioStop += handler;
 
+            var inControl = false;
+
             try
             {
-                AudioStreamer.SendAudio(audioSource);
+                cancellationToken.Register(() =>
+                {
+                    if (inControl)
+                    {
+                        AudioStreamer.ClearAudio();
+                    }
+                });
+                inControl = true;
+                AudioStreamer.SendAudio(audioSource, cancellationToken: cancellationToken);
                 await tcs.Task;
             }
             finally
             {
+                inControl = false;
                 AudioStreamer.OnAudioStop -= handler;
             }
         }
 
-        public void PlayAudioSync(IAudioSource audioSource)
+        public void PlayAudioSync(IAudioSource audioSource, CancellationToken cancellationToken = default)
         {
             ThrowIfStale();
-            PlayAudio(audioSource).Wait();
+            PlayAudio(audioSource, cancellationToken: cancellationToken).Wait();
         }
 
         public void StopAudio()

@@ -32,14 +32,14 @@ namespace Driscod.Audio
         public static IEnumerable<YoutubeVideo> CreateFromPlaylist(string playlistId)
         {
             var youtube = new YoutubeClient();
-            var videos = youtube.Playlists.GetVideosAsync(playlistId).GetAwaiter().GetResult();
+            var videoEnumerator = youtube.Playlists.GetVideosAsync(playlistId).GetAsyncEnumerator();
 
-            foreach (var video in videos)
+            while (videoEnumerator.Current != null)
             {
                 YoutubeVideo source;
                 try
                 {
-                    source = new YoutubeVideo(video.Id);
+                    source = new YoutubeVideo(videoEnumerator.Current.Id);
                 }
                 catch
                 {
@@ -48,6 +48,8 @@ namespace Driscod.Audio
                 }
 
                 yield return source;
+
+                videoEnumerator.MoveNextAsync().GetAwaiter().GetResult();
             }
         }
 
@@ -57,7 +59,7 @@ namespace Driscod.Audio
             Video = await youtube.Videos.GetAsync(_videoId);
 
             var streamManifest = await youtube.Videos.Streams.GetManifestAsync(_videoId);
-            StreamInfo = streamManifest.GetAudioOnly().WithHighestBitrate();
+            StreamInfo = streamManifest.GetAudioOnlyStreams().GetWithHighestBitrate();
         }
     }
 }

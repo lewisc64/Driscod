@@ -1,4 +1,5 @@
-﻿using Driscod.Network;
+﻿using Driscod.Gateway.Consts;
+using Driscod.Network;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -41,7 +42,9 @@ namespace Driscod.Gateway
 
         public bool Ready { get; private set; }
 
-        public override string Name => $"SHARD-{_shardNumber}";
+        public string BotName { get; set; } = "Unnamed";
+
+        public override string Name => $"{BotName}-{_shardNumber}";
 
         public Shard(string token, int shardNumber, int totalShards, int intents)
             : base(Connectivity.WebSocketEndpoint)
@@ -73,7 +76,7 @@ namespace Driscod.Gateway
                 StartHeart();
             });
 
-            AddListener<JObject>((int)MessageType.Dispatch, "READY", data =>
+            AddListener<JObject>((int)MessageType.Dispatch, EventNames.Ready, data =>
             {
                 if (DetailedLogging)
                 {

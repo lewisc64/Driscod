@@ -1,4 +1,5 @@
 ﻿using Driscod.Gateway;
+using Driscod.Gateway.Consts;
 using Driscod.Network;
 using Driscod.Tracking.Objects;
 using Newtonsoft.Json;
@@ -294,22 +295,31 @@ namespace Driscod.Tracking
             }
         }
 
+        private void SetShardBotNames()
+        {
+            foreach (var shard in _shards)
+            {
+                shard.BotName = $"{User.Username}#{User.Discriminator}";
+            }
+        }
+
         private void CreateDispatchListeners()
         {
             foreach (var shard in _shards)
             {
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    "READY",
+                    EventNames.Ready,
                     data =>
                     {
                         _userId = data["user"]["id"].ToObject<string>();
                         CreateOrUpdateObject<User>(data["user"].ToObject<JObject>());
+                        SetShardBotNames();
                     });
 
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    "MESSAGE_CREATE",
+                    EventNames.MessageCreate,
                     data =>
                     {
                         if (Ready)
@@ -320,7 +330,7 @@ namespace Driscod.Tracking
 
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    "MESSAGE_UPDATE",
+                    EventNames.MessageUpdate,
                     data =>
                     {
                         if (Ready)
@@ -331,7 +341,7 @@ namespace Driscod.Tracking
 
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    "TYPING_START",
+                    EventNames.TypingStart,
                     data =>
                     {
                         if (Ready)
@@ -342,7 +352,7 @@ namespace Driscod.Tracking
 
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    new[] { "GUILD_CREATE", "GUILD_UPDATE" },
+                    new[] { EventNames.GuildCreate, EventNames.GuildUpdate },
                     data =>
                     {
                         CreateOrUpdateObject<Guild>(data, discoveredBy: shard);
@@ -350,7 +360,7 @@ namespace Driscod.Tracking
 
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    new[] { "GUILD_DELETE" },
+                    new[] { EventNames.GuildDelete },
                     data =>
                     {
                         DeleteObject<Guild>(data["guild_id"].ToObject<string>());
@@ -358,7 +368,7 @@ namespace Driscod.Tracking
 
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    new[] { "CHANNEL_CREATE", "CHANNEL_UPDATE" },
+                    new[] { EventNames.ChannelCreate, EventNames.ChannelUpdate },
                     data =>
                     {
                         if (data.ContainsKey("guild_id"))
@@ -373,7 +383,7 @@ namespace Driscod.Tracking
 
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    "CHANNEL_DELETE",
+                    EventNames.ChannelDelete,
                     data =>
                     {
                         GetObject<Guild>(data["guild_id"].ToObject<string>()).DeleteChannel(data["id"].ToObject<string>());
@@ -381,7 +391,7 @@ namespace Driscod.Tracking
 
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    "GUILD_EMOJIS_UPDATE",
+                    EventNames.GuildEmojisUpdate,
                     data =>
                     {
                         data["id"] = data["guild_id"];
@@ -390,7 +400,7 @@ namespace Driscod.Tracking
 
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    new[] { "GUILD_ROLE_CREATE", "GUILD_ROLE_UPDATE" },
+                    new[] { EventNames.GuildRoleCreate, EventNames.GuildRoleUpdate },
                     data =>
                     {
                         GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdateRole(data["role"].ToObject<JObject>());
@@ -398,7 +408,7 @@ namespace Driscod.Tracking
 
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    "GUILD_ROLE_DELETE",
+                    EventNames.GuildRoleDelete,
                     data =>
                     {
                         GetObject<Guild>(data["guild_id"].ToObject<string>()).DeleteRole(data["role_id"].ToObject<string>());
@@ -406,7 +416,7 @@ namespace Driscod.Tracking
 
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    "PRESENCE_UPDATE",
+                    EventNames.PresenceUpdate,
                     data =>
                     {
                         GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdatePresence(data);
@@ -414,7 +424,7 @@ namespace Driscod.Tracking
 
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    "VOICE_STATE_UPDATE",
+                    EventNames.VoiceStateUpdate,
                     data =>
                     {
                         var userId = data.ContainsKey("member") ? data["member"]["user"]["id"].ToObject<string>() : data["user_id"].ToObject<string>();
