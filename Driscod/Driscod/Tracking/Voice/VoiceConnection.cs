@@ -9,6 +9,8 @@ namespace Driscod.Tracking.Voice
 {
     public class VoiceConnection : IDisposable
     {
+        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
         private readonly string _channelId;
 
         private VoiceGateway VoiceGateway { get; set; }
@@ -19,13 +21,13 @@ namespace Driscod.Tracking.Voice
 
         public string VoiceSessionId => VoiceGateway.SessionId;
 
-        public bool Playing => AudioStreamer.SendingAudio;
+        public bool Playing => AudioStreamer.TransmittingAudio;
 
         public bool Stale => !VoiceGateway.Running;
 
         public Channel Channel => Bot.GetObject<Channel>(_channelId);
 
-        public Guild Guild => Channel.Guild;
+        public Guild Guild => Channel?.Guild;
 
         public EventHandler OnPlayAudio { get; set; }
 
@@ -92,6 +94,7 @@ namespace Driscod.Tracking.Voice
                 });
                 inControl = true;
                 AudioStreamer.SendAudio(audioSource, cancellationToken: cancellationToken);
+                AudioStreamer.QueueSilence();
                 await tcs.Task;
             }
             finally
@@ -114,6 +117,12 @@ namespace Driscod.Tracking.Voice
 
         public void Disconnect()
         {
+            if (Guild == null)
+            {
+                Logger.Warn("Attempted to disconnect a voice connection, but was unable to locate the guild. Assuming connection has already closed.");
+                return;
+            }
+
             lock (Guild.VoiceLock)
             {
                 if (VoiceGateway != null && VoiceGateway.Running)

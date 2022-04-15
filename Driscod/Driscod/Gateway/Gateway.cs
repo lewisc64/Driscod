@@ -33,7 +33,7 @@ namespace Driscod.Gateway
 
         protected virtual TimeSpan ReconnectDelay => TimeSpan.FromSeconds(1);
 
-        protected CancellationTokenSource CancellationToken { get; set; }
+        protected CancellationTokenSource CancellationTokenSource { get; set; }
 
         protected int HeartbeatIntervalMilliseconds { get; set; }
 
@@ -108,8 +108,8 @@ namespace Driscod.Gateway
 
         public virtual Task Start()
         {
-            CancellationToken = new CancellationTokenSource();
-            CancellationToken.Token.Register(() =>
+            CancellationTokenSource = new CancellationTokenSource();
+            CancellationTokenSource.Token.Register(() =>
             {
                 if (DetailedLogging)
                 {
@@ -187,16 +187,16 @@ namespace Driscod.Gateway
                 {
                     await Task.WhenAny(
                         tcs.Task,
-                        Task.Delay(TimeSpan.FromMinutes(15), CancellationToken.Token));
+                        Task.Delay(TimeSpan.FromMinutes(15), CancellationTokenSource.Token));
                 }
                 else
                 {
                     await Task.WhenAny(
                         tcs.Task,
-                        Task.Delay(timeout.Value, CancellationToken.Token));
+                        Task.Delay(timeout.Value, CancellationTokenSource.Token));
                 }
 
-                CancellationToken.Token.ThrowIfCancellationRequested();
+                CancellationTokenSource.Token.ThrowIfCancellationRequested();
 
                 if (!tcs.Task.IsCompleted)
                 {
@@ -300,7 +300,7 @@ namespace Driscod.Gateway
 
         protected void ManageTask(Task task)
         {
-            if (!CancellationToken.IsCancellationRequested)
+            if (!CancellationTokenSource.IsCancellationRequested)
             {
                 Tasks.Add(task);
             }
@@ -326,14 +326,14 @@ namespace Driscod.Gateway
 
             try
             {
-                while (Socket.State == WebSocketState.Open && !CancellationToken.IsCancellationRequested)
+                while (Socket.State == WebSocketState.Open && !CancellationTokenSource.IsCancellationRequested)
                 {
                     if (Environment.TickCount < nextHeartbeat)
                     {
-                        await Task.Delay(nextHeartbeat - Environment.TickCount, CancellationToken.Token);
+                        await Task.Delay(nextHeartbeat - Environment.TickCount, CancellationTokenSource.Token);
                     }
 
-                    if (CancellationToken.IsCancellationRequested)
+                    if (CancellationTokenSource.IsCancellationRequested)
                     {
                         break;
                     }
@@ -393,9 +393,9 @@ namespace Driscod.Gateway
                 Logger.Debug($"[{Name}] Clearing tasks...");
             }
 
-            if (!CancellationToken.IsCancellationRequested)
+            if (!CancellationTokenSource.IsCancellationRequested)
             {
-                CancellationToken.Cancel();
+                CancellationTokenSource.Cancel();
             }
             else
             {

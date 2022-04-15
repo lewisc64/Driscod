@@ -1,4 +1,5 @@
 ﻿using Driscod.Audio;
+using Driscod.Audio.Encoding;
 using Driscod.Extensions;
 using Driscod.Network.Udp;
 using Newtonsoft.Json.Linq;
@@ -133,6 +134,11 @@ namespace Driscod.Gateway
 
             AddListener<JObject>((int)MessageType.SessionDescription, data =>
             {
+                var codec = data["audio_codec"].ToObject<string>();
+                if (codec != "opus")
+                {
+                    Logger.Warn($"[{Name}] Voice gateway requested unsupported audio codec: '{codec}'.");
+                }
                 SecretKey = data["secret_key"].ToObject<byte[]>();
                 Ready = true;
             });
@@ -189,7 +195,7 @@ namespace Driscod.Gateway
                 throw new InvalidOperationException("Voice socket is not ready to create audio streamer.");
             }
 
-            var streamer = new AudioStreamer(CancellationToken.Token)
+            var streamer = new AudioStreamer(new OpusAudioEncoder(), cancellationToken: CancellationTokenSource.Token)
             {
                 SocketEndPoint = GetUdpEndpoint(),
                 LocalPort = LocalPort,

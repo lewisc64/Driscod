@@ -6,11 +6,11 @@ namespace Driscod.Audio.Encoding
 {
     public class OpusAudioEncoder : IAudioEncoder
     {
-        private readonly int _channels;
+        private int _channels;
 
-        private readonly OpusEncoder encoder;
+        private OpusEncoder encoder;
 
-        public OpusAudioEncoder(int sampleRate, int channels)
+        public void Setup(int sampleRate, int channels)
         {
             _channels = channels;
             encoder = OpusEncoder.Create(sampleRate, channels, OpusApplication.OPUS_APPLICATION_AUDIO);

@@ -1,4 +1,5 @@
 ﻿using Driscod.Gateway;
+using Driscod.Gateway.Consts;
 using Driscod.Network;
 using Driscod.Tracking.Voice;
 using Newtonsoft.Json.Linq;
@@ -168,7 +169,7 @@ namespace Driscod.Tracking.Objects
                         {
                             stateData = await DiscoveredOnShard.ListenForEvent<JObject>(
                                 (int)Shard.MessageType.Dispatch,
-                                "VOICE_STATE_UPDATE",
+                                EventNames.VoiceStateUpdate,
                                 listenerCreateCallback: sendAction,
                                 validator: data =>
                                 {
@@ -180,7 +181,7 @@ namespace Driscod.Tracking.Objects
                         {
                             serverData = await DiscoveredOnShard.ListenForEvent<JObject>(
                                 (int)Shard.MessageType.Dispatch,
-                                "VOICE_SERVER_UPDATE",
+                                EventNames.VoiceServerUpdate,
                                 listenerCreateCallback: sendAction,
                                 validator: data =>
                                 {

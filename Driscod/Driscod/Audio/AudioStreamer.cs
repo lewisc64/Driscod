@@ -2,7 +2,9 @@
 using Driscod.Extensions;
 using Driscod.Network.Udp;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -15,11 +17,13 @@ namespace Driscod.Audio
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
+        private const int PacketChunkSize = 16;
+
         private readonly object _audioSendLock = new object();
 
-        private readonly object _packetQueueLock = new object();
+        private readonly IAudioEncoder _encoder;
 
-        private UdpSocket _udpSocket;
+        private readonly Stopwatch _packetlessStopwatch = new Stopwatch();
 
         private CancellationToken _globalCancellationToken;
 
@@ -27,9 +31,9 @@ namespace Driscod.Audio
 
         private int MaxQueuedPackets => (int)MaxPacketBuffer.TotalMilliseconds / PacketIntervalMilliseconds;
 
-        private readonly Queue<byte[]> QueuedPackets = new Queue<byte[]>();
+        private readonly ConcurrentQueue<byte[]> QueuedPackets = new ConcurrentQueue<byte[]>();
 
-        public bool SendingAudio { get; set; } = false;
+        public bool TransmittingAudio { get; private set; } = false;
 
         public int SampleRate { get; set; } = 48000;
 
@@ -53,49 +57,30 @@ namespace Driscod.Audio
 
         public event EventHandler OnAudioStop;
 
-        private UdpSocket UdpSocket
+        public AudioStreamer(IAudioEncoder encoder, CancellationToken cancellationToken = default)
         {
-            get
-            {
-                if (_udpSocket == null)
-                {
-                    _udpSocket = new UdpSocket(SocketEndPoint);
-                }
-                return _udpSocket;
-            }
-        }
-
-        public AudioStreamer()
-            : this(new CancellationToken())
-        {
-        }
-
-        public AudioStreamer(CancellationToken cancellationToken)
-        {
+            _encoder = encoder;
             _globalCancellationToken = cancellationToken;
 
-            AudioLoop().Forget();
+            new Thread(() => AudioLoop().Wait()).Start();
         }
 
-        public void SendAudio(Stream sampleStream, bool queueSilence = true, CancellationToken cancellationToken = default)
+        public void SendAudio(Stream sampleStream, CancellationToken cancellationToken = default)
         {
-            const int ChunkSize = 16;
-
-            var encoder = new OpusAudioEncoder(SampleRate, Channels);
+            _encoder.Setup(SampleRate, Channels);
+            var chunk = new List<byte[]>();
+            var bytesRead = 0;
 
             lock (_audioSendLock)
             {
-                var chunk = new Queue<byte[]>();
-                var bytesReadOfChunk = 0;
-
                 while (!_globalCancellationToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                 {
                     var sampleBytes = new byte[SamplesPerPacket * Channels * 4];
-                    var bytesReadOfPacket = sampleStream.Read(sampleBytes, bytesReadOfChunk, sampleBytes.Length);
+                    var bytesReadOfPacket = sampleStream.Read(sampleBytes, 0, sampleBytes.Length);
 
-                    chunk.Enqueue(encoder.Encode(CastSamplesAsFloats(sampleBytes)));
+                    chunk.Add(_encoder.Encode(CastSamplesAsFloats(sampleBytes)));
 
-                    if (chunk.Count >= ChunkSize)
+                    if (chunk.Count >= PacketChunkSize)
                     {
                         EnqueuePackets(chunk);
                         chunk.Clear();
@@ -106,49 +91,43 @@ namespace Driscod.Audio
                         break;
                     }
 
-                    bytesReadOfChunk += SamplesPerPacket * Channels;
+                    bytesRead += SamplesPerPacket * Channels;
                 }
 
                 EnqueuePackets(chunk);
-
-                if (queueSilence)
-                {
-                    QueueSilence();
-                }
             }
         }
 
-        public void SendAudio(float[] samples, bool queueSilence = false, CancellationToken cancellationToken = default)
+        public void SendAudio(float[] samples, CancellationToken cancellationToken = default)
         {
-            SendAudio(new MemoryStream(samples.Select(x => BitConverter.GetBytes(x)).Aggregate(new List<byte>(), (acc, value) =>
-            {
-                acc.AddRange(value);
-                return acc;
-            }).ToArray()), queueSilence: queueSilence, cancellationToken: cancellationToken);
+            SendAudio(new MemoryStream(samples.SelectMany(x => BitConverter.GetBytes(x)).ToArray()), cancellationToken: cancellationToken);
         }
 
-        public void SendAudio(IAudioSource audioSource, bool queueSilence = false, CancellationToken cancellationToken = default)
+        public void SendAudio(IAudioSource audioSource, CancellationToken cancellationToken = default)
         {
-            SendAudio(audioSource.GetSampleStream(SampleRate, Channels), queueSilence: queueSilence, cancellationToken: cancellationToken);
+            SendAudio(audioSource.GetSampleStream(SampleRate, Channels), cancellationToken: cancellationToken);
+        }
+
+        public void QueueSilence(int packets = 10)
+        {
+            SendAudio(Enumerable.Repeat(0f, SamplesPerPacket * Channels * packets).ToArray());
         }
 
         public void ClearAudio()
         {
-            lock (_packetQueueLock)
-            {
-                QueuedPackets.Clear();
-            }
+            QueuedPackets.Clear();
         }
 
         private async Task AudioLoop()
         {
+            var socket = new UdpSocket(SocketEndPoint);
+            var timer = new DriftTimer(TimeSpan.FromMilliseconds(PacketIntervalMilliseconds));
+
+            uint timestamp = 0;
+            ushort sequence = 0;
+
             try
             {
-                uint timestamp = 0;
-                ushort sequence = 0;
-
-                var timer = new DriftTimer(TimeSpan.FromMilliseconds(PacketIntervalMilliseconds));
-
                 while (!_globalCancellationToken.IsCancellationRequested)
                 {
                     var packet = GetNextPacket(sequence, timestamp);
@@ -157,7 +136,7 @@ namespace Driscod.Audio
 
                     if (packet.Length > 0)
                     {
-                        await UdpSocket.Send(packet);
+                        await socket.Send(packet);
                     }
 
                     sequence++;
@@ -176,20 +155,15 @@ namespace Driscod.Audio
             {
                 Logger.Debug("Audio loop stopped.");
                 ClearAudio();
-                if (SendingAudio)
+                if (TransmittingAudio)
                 {
-                    SendingAudio = false;
+                    TransmittingAudio = false;
                     Task.Run(() =>
                     {
                         OnAudioStop?.Invoke(this, EventArgs.Empty);
                     }).Forget();
                 }
             }
-        }
-
-        private void QueueSilence()
-        {
-            SendAudio(Enumerable.Repeat(0f, SamplesPerPacket * 10).ToArray(), queueSilence: false);
         }
 
         private void EnqueuePackets(IEnumerable<byte[]> packets)
@@ -206,34 +180,36 @@ namespace Driscod.Audio
             {
                 Thread.Sleep(PacketIntervalMilliseconds / 2);
             }
-            lock (_packetQueueLock)
-            {
-                QueuedPackets.Enqueue(packet);
-            }
+            QueuedPackets.Enqueue(packet);
         }
 
         private byte[] GetNextPacket(ushort sequence, uint timestamp)
         {
-            lock (_packetQueueLock)
+            if (QueuedPackets.TryDequeue(out byte[] data))
             {
-                if (QueuedPackets.Any())
+                if (!TransmittingAudio)
                 {
-                    if (!SendingAudio)
+                    _packetlessStopwatch.Reset();
+                    TransmittingAudio = true;
+                    Task.Run(() =>
                     {
-                        SendingAudio = true;
-                        Task.Run(() =>
-                        {
-                            OnAudioStart?.Invoke(this, EventArgs.Empty);
-                        }).Forget();
-                    }
-
-                    return AssemblePacket(QueuedPackets.Dequeue(), sequence, timestamp);
+                        OnAudioStart?.Invoke(this, EventArgs.Empty);
+                    }).Forget();
                 }
-                else
+
+                return AssemblePacket(data, sequence, timestamp);
+            }
+            else
+            {
+                if (TransmittingAudio)
                 {
-                    if (SendingAudio)
+                    if (!_packetlessStopwatch.IsRunning)
                     {
-                        SendingAudio = false;
+                        _packetlessStopwatch.Restart();
+                    }
+                    if (_packetlessStopwatch.Elapsed >= TimeSpan.FromSeconds(0.5))
+                    {
+                        TransmittingAudio = false;
                         Task.Run(() =>
                         {
                             OnAudioStop?.Invoke(this, EventArgs.Empty);

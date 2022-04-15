@@ -33,5 +33,7 @@
         public const string PresenceUpdate = "PRESENCE_UPDATE";
 
         public const string VoiceStateUpdate = "VOICE_STATE_UPDATE";
+
+        public const string VoiceServerUpdate = "VOICE_SERVER_UPDATE";
     }
 }
