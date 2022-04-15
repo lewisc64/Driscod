@@ -11,6 +11,8 @@ namespace Driscod.Network
 
         public const string ChannelMessagePathFormat = "channels/{0}/messages/{1}";
 
+        public const string ChannelMessageReactionPathFormat = "channels/{0}/messages/{1}/reactions/{2}/{3}";
+
         public const int GatewayEventsPerMinute = 120 - 20; // slightly less for safety
 
         public static string WebSocketEndpoint

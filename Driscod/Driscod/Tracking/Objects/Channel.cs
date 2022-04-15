@@ -74,21 +74,21 @@ namespace Driscod.Tracking.Objects
             }
         }
 
-        public void SendMessage(string message)
-        {
-            SendMessage(message, null);
-        }
-
         public void SendMessage(MessageEmbed embed)
         {
             SendMessage(null, embed);
         }
 
-        public void SendMessage(string message, MessageEmbed embed)
+        public void SendMessage(IMessageAttachment file)
         {
-            if (message == null && embed == null)
+            SendMessage(null, attachments: new[] { file });
+        }
+
+        public void SendMessage(string message, MessageEmbed embed = null, IEnumerable<IMessageAttachment> attachments = null)
+        {
+            if (message == null && embed == null && attachments == null)
             {
-                throw new ArgumentException("Both parmeters are null. At least one must be set.");
+                throw new ArgumentException("All parmeters are null. At least one must be set.");
             }
 
             if (UnmessagableChannelTypes.Contains(ChannelType))
@@ -118,7 +118,7 @@ namespace Driscod.Tracking.Objects
                 body["embed"] = JObject.FromObject(embed);
             }
 
-            Bot.SendJson(HttpMethod.Post, Connectivity.ChannelMessagesPathFormat, new[] { Id }, body);
+            Bot.SendJson(HttpMethod.Post, Connectivity.ChannelMessagesPathFormat, new[] { Id }, doc: body, attachments: attachments);
         }
 
         public VoiceConnection ConnectVoice()

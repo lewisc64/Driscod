@@ -16,6 +16,8 @@ namespace Driscod.Tracking.Objects
 
         private string _content;
 
+        private List<Reaction> _reactions;
+
         public User Author => Bot.GetObject<User>(_authorId);
 
         public Channel Channel => Bot.GetObject<Channel>(_channelId);
@@ -39,6 +41,10 @@ namespace Driscod.Tracking.Objects
 
         public IEnumerable<MessageEmbed> Embeds { get; set; }
 
+        public IEnumerable<Reaction> Reactions => _reactions;
+
+        public IEnumerable<Reaction> MyReactions => Reactions.Where(x => x.BotUserReacted);
+
         public Message PreviousMessage => GetRelativeMessage("before");
 
         public Message NextMessage => GetRelativeMessage("after");
@@ -54,6 +60,21 @@ namespace Driscod.Tracking.Objects
             _authorId = doc["author"]["id"].ToObject<string>();
             _channelId = doc["channel_id"].ToObject<string>();
             _content = doc["content"].ToObject<string>();
+
+            if (doc.ContainsKey("reactions"))
+            {
+                _reactions = new List<Reaction>();
+                foreach (var reactionDoc in doc["reactions"].ToArray())
+                {
+                    var reaction = new Reaction
+                    {
+                        DiscoveredOnShard = DiscoveredOnShard,
+                        Bot = Bot,
+                    };
+                    reaction.UpdateFromDocument(reactionDoc.ToObject<JObject>());
+                    _reactions.Add(reaction);
+                }
+            }
 
             Embeds = doc["embeds"].Select(x => x.ToObject<MessageEmbed>());
         }

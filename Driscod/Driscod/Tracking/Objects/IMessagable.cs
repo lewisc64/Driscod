@@ -1,11 +1,13 @@
-﻿namespace Driscod.Tracking.Objects
+﻿using System.Collections.Generic;
+
+namespace Driscod.Tracking.Objects
 {
     public interface IMessageable
     {
-        void SendMessage(string message);
-
         void SendMessage(MessageEmbed embed);
 
-        void SendMessage(string message, MessageEmbed embed);
+        void SendMessage(IMessageAttachment file);
+
+        void SendMessage(string message, MessageEmbed embed = null, IEnumerable<IMessageAttachment> attachments = null);
     }
 }

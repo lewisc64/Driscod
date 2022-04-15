@@ -16,6 +16,11 @@ namespace Driscod.Tracking.Objects
 
         public bool Animated { get; private set; }
 
+        public string FormatAsMessage()
+        {
+            return $"<:{Name}:{Id}>";
+        }
+
         internal override void UpdateFromDocument(JObject doc)
         {
             Id = doc["id"].ToObject<string>();

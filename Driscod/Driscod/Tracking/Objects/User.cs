@@ -32,19 +32,19 @@ namespace Driscod.Tracking.Objects
             }
         }
 
-        public void SendMessage(string message)
-        {
-            SendMessage(message, null);
-        }
-
         public void SendMessage(MessageEmbed embed)
         {
             SendMessage(null, embed);
         }
 
-        public void SendMessage(string message, MessageEmbed embed)
+        public void SendMessage(IMessageAttachment file)
         {
-            DmChannel.SendMessage(message: message, embed: embed);
+            SendMessage(null, attachments: new[] { file });
+        }
+
+        public void SendMessage(string message, MessageEmbed embed = null, IEnumerable<IMessageAttachment> attachments = null)
+        {
+            DmChannel.SendMessage(message, embed: embed, attachments: attachments);
         }
 
         public override string ToString()

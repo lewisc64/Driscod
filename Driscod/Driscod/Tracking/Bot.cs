@@ -40,9 +40,9 @@ namespace Driscod.Tracking
 
         void Stop();
 
-        JObject SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, Dictionary<string, string> queryParams = null);
+        JObject SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null);
 
-        T SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, Dictionary<string, string> queryParams = null)
+        T SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null)
             where T : JContainer;
 
         T GetObject<T>(string id)
@@ -155,12 +155,12 @@ namespace Driscod.Tracking
             RateLimits.Clear();
         }
 
-        public JObject SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, Dictionary<string, string> queryParams = null)
+        public JObject SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null)
         {
-            return SendJson<JObject>(method, pathFormat, pathParams, doc, queryParams);
+            return SendJson<JObject>(method, pathFormat, pathParams, doc: doc, attachments: attachments, queryParams: queryParams);
         }
 
-        public T SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, Dictionary<string, string> queryParams = null)
+        public T SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null)
             where T : JContainer
         {
             if (pathFormat.StartsWith("/"))
@@ -182,9 +182,30 @@ namespace Driscod.Tracking
             {
                 var requestMessage = new HttpRequestMessage(method, requestPath);
 
-                if (json != null)
+                if (attachments != null && attachments.Any())
                 {
-                    requestMessage.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                    var content = new MultipartFormDataContent();
+                    if (json != null)
+                    {
+                        var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
+                        jsonContent.Headers.Add("Content-Disposition", "form-data; name=\"payload_json\"");
+                        content.Add(jsonContent);
+                    }
+                    for (var i = 0; i < attachments.Count(); i++)
+                    {
+                        var attachment = attachments.ElementAt(i);
+                        var fileContent = new ByteArrayContent(attachment.Content, 0, attachment.Content.Length);
+                        fileContent.Headers.Add("Content-Disposition", $"form-data; name=\"files[{i}]\"; filename=\"{attachment.FileName}\"");
+                        content.Add(fileContent);
+                    }
+                    requestMessage.Content = content;
+                }
+                else
+                {
+                    if (json != null)
+                    {
+                        requestMessage.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                    }
                 }
 
                 var response = HttpClient.SendAsync(requestMessage).Result;

@@ -29,6 +29,8 @@ namespace Driscod.Tracking.Objects
 
         public VoiceConnection VoiceConnection { get; set; }
 
+        public bool HasActiveVoiceConnection => VoiceConnection != null && !VoiceConnection.Stale;
+
         public IEnumerable<Channel> TextChannels => Channels.Where(x => x.ChannelType == ChannelType.Text).OrderBy(x => x.Position);
 
         public IEnumerable<Channel> VoiceChannels => Channels.Where(x => x.ChannelType == ChannelType.Voice).OrderBy(x => x.Position);
