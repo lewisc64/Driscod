@@ -65,6 +65,11 @@ namespace Driscod.Audio
             new Thread(() => AudioLoop().Wait()).Start();
         }
 
+        public string GetStatsString()
+        {
+            return $"address={LocalPort}:{SocketEndPoint.Address}:{SocketEndPoint.Port},queuedPackets={QueuedPackets.Count}/{MaxQueuedPackets},silenceTime={_packetlessStopwatch.ElapsedMilliseconds}";
+        }
+
         public void SendAudio(Stream sampleStream, CancellationToken cancellationToken = default)
         {
             _encoder.Setup(SampleRate, Channels);
@@ -176,7 +181,7 @@ namespace Driscod.Audio
 
         private void EnqueuePacket(byte[] packet)
         {
-            while (QueuedPackets.Count > MaxQueuedPackets)
+            while (QueuedPackets.Count >= MaxQueuedPackets)
             {
                 Thread.Sleep(PacketIntervalMilliseconds / 2);
             }
