@@ -10,7 +10,7 @@ namespace Driscod.Audio
 {
     public class RtpPacketGenerator
     {
-        public static readonly string[] SupportedEncryptionModes = new[] { "xsalsa20_poly1305", "xsalsa20_poly1305_suffix" };
+        public static readonly string[] SupportedEncryptionModes = new[] { "xsalsa20_poly1305", "xsalsa20_poly1305_lite", "xsalsa20_poly1305_suffix" };
 
         private static readonly Random Random = new Random();
 
@@ -64,6 +64,13 @@ namespace Driscod.Audio
                 case "xsalsa20_poly1305":
                     Packet.GetRange(0, _headerLength).CopyTo(nonce, 0);
                     payload = EncryptXSalsa20Poly1305(payload, key, nonce);
+                    break;
+
+                case "xsalsa20_poly1305_lite":
+                    Random.NextBytes(new Span<byte>(nonce).Slice(0, 4));
+                    payload = EncryptXSalsa20Poly1305(payload, key, nonce)
+                        .Concat(nonce.Take(4))
+                        .ToArray();
                     break;
 
                 case "xsalsa20_poly1305_suffix":
