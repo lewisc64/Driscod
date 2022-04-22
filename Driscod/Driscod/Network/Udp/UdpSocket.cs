@@ -1,7 +1,5 @@
-﻿using Driscod.Extensions;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -13,17 +11,15 @@ namespace Driscod.Network.Udp
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
+        private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
+
+        private UdpClient _udpClient;
+
+        private ConcurrentQueue<byte[]> _recievedPacketBuffer = new ConcurrentQueue<byte[]>();
+
         private bool _disposed = false;
 
-        private readonly UdpClient _udpClient;
-
-        private readonly CancellationTokenSource _cancellationToken = new CancellationTokenSource();
-
-        private readonly object _packetQueueLock = new object();
-
-        private event EventHandler _packetRecievedEvent;
-
-        private Queue<byte[]> ReceivedPackets { get; set; } = new Queue<byte[]>();
+        private event EventHandler PacketRecievedEvent;
 
         public bool ListenForPackets { get; set; } = false;
 
@@ -38,24 +34,25 @@ namespace Driscod.Network.Udp
             _udpClient.Connect(endpoint);
             Logger.Debug($"UDP socket connection to {endpoint.Address}:{endpoint.Port}");
 
-            Task.Run(async () =>
+            new Thread(async () =>
             {
-                while (!_cancellationToken.IsCancellationRequested)
+                while (!_disposed && !_cancellationTokenSource.IsCancellationRequested)
                 {
                     if (ListenForPackets)
                     {
                         try
                         {
-                            var result = await Task.Run(async () => await _udpClient.ReceiveAsync(), _cancellationToken.Token);
-                            lock (_packetQueueLock)
-                            {
-                                ReceivedPackets.Enqueue(result.Buffer);
-                                _packetRecievedEvent?.Invoke(this, EventArgs.Empty);
-                            }
+                            var result = await _udpClient.ReceiveAsync(cancellationToken: _cancellationTokenSource.Token);
+                            _recievedPacketBuffer.Enqueue(result.Buffer);
+                            PacketRecievedEvent?.Invoke(this, EventArgs.Empty);
                         }
                         catch (ObjectDisposedException)
                         {
-                            // ignored
+                            // ignore
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // ignore
                         }
                         catch (Exception ex)
                         {
@@ -68,7 +65,7 @@ namespace Driscod.Network.Udp
                         await Task.Delay(200);
                     }
                 }
-            }).Forget();
+            }).Start();
         }
 
         public byte[] GetNextPacket()
@@ -80,37 +77,41 @@ namespace Driscod.Network.Udp
                 throw new InvalidOperationException("Not listening for packets.");
             }
 
-            lock (_packetQueueLock)
+            if (_recievedPacketBuffer.TryDequeue(out var packet))
             {
-                if (!ReceivedPackets.Any())
-                {
-                    return new byte[0];
-                }
-
-                return ReceivedPackets.Dequeue();
+                return packet;
             }
+
+            return new byte[0];
         }
 
-        public async Task<byte[]> WaitForNextPacket()
+        public async Task<byte[]> WaitForNextPacket(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
+
+            if (timeout == null)
+            {
+                timeout = TimeSpan.FromMinutes(10);
+            }
 
             if (!ListenForPackets)
             {
                 throw new InvalidOperationException("Not listening for packets.");
             }
 
+            var combinedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cancellationTokenSource.Token);
+
             var tcs = new TaskCompletionSource<byte[]>();
 
             EventHandler handler = (a, b) =>
             {
-                lock (_packetQueueLock)
+                if (_recievedPacketBuffer.TryDequeue(out var packet))
                 {
-                    tcs.TrySetResult(ReceivedPackets.Dequeue());
+                    tcs.TrySetResult(packet);
                 }
             };
 
-            _packetRecievedEvent += handler;
+            PacketRecievedEvent += handler;
             try
             {
                 var packet = GetNextPacket();
@@ -118,15 +119,12 @@ namespace Driscod.Network.Udp
                 {
                     return packet;
                 }
-                await Task.Run(() =>
-                {
-                    tcs.Task.Wait(_cancellationToken.Token);
-                });
+                await tcs.Task.WaitAsync(timeout.Value, cancellationToken: combinedCancellationTokenSource.Token);
                 return tcs.Task.Result;
             }
             finally
             {
-                _packetRecievedEvent -= handler;
+                PacketRecievedEvent -= handler;
             }
         }
 
@@ -147,9 +145,13 @@ namespace Driscod.Network.Udp
             if (disposing)
             {
                 _disposed = true;
-                _cancellationToken.Cancel();
+                _cancellationTokenSource.Cancel();
+
                 _udpClient.Dispose();
-                ReceivedPackets.Clear();
+                _udpClient = null;
+
+                _recievedPacketBuffer.Clear();
+                _recievedPacketBuffer = null;
             }
         }
 

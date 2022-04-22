@@ -19,8 +19,4 @@
     <PackageReference Include="YoutubeExplode" Version="6.1.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Network\WebSocket\" />
-  </ItemGroup>
-
 </Project>

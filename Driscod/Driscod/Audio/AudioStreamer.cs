@@ -54,11 +54,6 @@ namespace Driscod.Audio
             new Thread(() => AudioLoop().Wait()).Start();
         }
 
-        public string GetStatsString()
-        {
-            return $"address={EndPointInfo.LocalPort}:{EndPointInfo.SocketEndPoint.Address}:{EndPointInfo.SocketEndPoint.Port},queuedPackets={_rawPayloadQueue.Count}/{MaxQueuedPackets},silenceTime={_packetlessStopwatch.ElapsedMilliseconds}";
-        }
-
         public void SendAudio(Stream sampleStream, CancellationToken cancellationToken = default)
         {
             var chunk = new List<float[]>();
