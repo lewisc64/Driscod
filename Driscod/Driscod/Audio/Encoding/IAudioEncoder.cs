@@ -2,7 +2,9 @@
 {
     public interface IAudioEncoder
     {
-        void Setup(int sampleRate, int channels);
+        int SampleRate { get; }
+
+        int Channels { get; }
 
         byte[] Encode(float[] samples);
     }

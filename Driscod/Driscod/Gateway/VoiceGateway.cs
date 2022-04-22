@@ -1,6 +1,7 @@
 ﻿using Driscod.Audio;
 using Driscod.Audio.Encoding;
 using Driscod.Extensions;
+using Driscod.Network;
 using Driscod.Network.Udp;
 using Newtonsoft.Json.Linq;
 using System;
@@ -116,6 +117,8 @@ namespace Driscod.Gateway
 
                 EncryptionMode = AllowedEncryptionModes.First();
 
+                Logger.Debug($"[{Name}] Using encryption mode '{EncryptionMode}'.");
+
                 await FetchExternalAddress();
 
                 await Send((int)MessageType.SelectProtocol, new JObject
@@ -195,7 +198,7 @@ namespace Driscod.Gateway
                 throw new InvalidOperationException("Voice socket is not ready to create audio streamer.");
             }
 
-            var streamer = new AudioStreamer(new OpusAudioEncoder(), cancellationToken: CancellationTokenSource.Token)
+            var endPointInfo = new VoiceEndPointInfo
             {
                 SocketEndPoint = GetUdpEndpoint(),
                 LocalPort = LocalPort,
@@ -203,6 +206,8 @@ namespace Driscod.Gateway
                 EncryptionKey = SecretKey,
                 EncryptionMode = EncryptionMode,
             };
+
+            var streamer = new AudioStreamer(new OpusAudioEncoder(Connectivity.VoiceSampleRate, Connectivity.VoiceChannels), endPointInfo, cancellationToken: CancellationTokenSource.Token);
 
             streamer.OnAudioStart += async (a, b) =>
             {

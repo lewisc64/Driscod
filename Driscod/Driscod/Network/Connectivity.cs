@@ -1,4 +1,5 @@
 ﻿using Newtonsoft.Json.Linq;
+using System;
 using System.Net.Http;
 
 namespace Driscod.Network
@@ -14,6 +15,10 @@ namespace Driscod.Network
         public const string ChannelMessageReactionPathFormat = "channels/{0}/messages/{1}/reactions/{2}/{3}";
 
         public const int GatewayEventsPerMinute = 120 - 20; // slightly less for safety
+
+        public const int VoiceSampleRate = 48000;
+
+        public const int VoiceChannels = 2;
 
         public static string WebSocketEndpoint
         {

@@ -1,5 +1,6 @@
 ﻿using Driscod.Audio.Encoding;
 using Driscod.Extensions;
+using Driscod.Network;
 using Driscod.Network.Udp;
 using System;
 using System.Collections.Concurrent;
@@ -7,7 +8,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -19,47 +19,36 @@ namespace Driscod.Audio
 
         private const int PacketChunkSize = 16;
 
-        private readonly object _audioSendLock = new object();
+        private const int PacketIntervalMilliseconds = 20;
 
-        private readonly IAudioEncoder _encoder;
+        private readonly object _audioSendLock = new object();
 
         private readonly Stopwatch _packetlessStopwatch = new Stopwatch();
 
+        private readonly ConcurrentQueue<float[]> _rawPayloadQueue = new ConcurrentQueue<float[]>();
+
         private CancellationToken _globalCancellationToken;
 
-        private int SamplesPerPacket => SampleRate * PacketIntervalMilliseconds / 1000;
+        private int SamplesPerPacket => Encoder.SampleRate * PacketIntervalMilliseconds / 1000;
 
-        private int MaxQueuedPackets => (int)MaxPacketBuffer.TotalMilliseconds / PacketIntervalMilliseconds;
+        private int MaxQueuedPackets => (int)AudioBufferSize.TotalMilliseconds / PacketIntervalMilliseconds;
 
-        private readonly ConcurrentQueue<byte[]> QueuedPackets = new ConcurrentQueue<byte[]>();
+        public IAudioEncoder Encoder { get; }
+
+        public VoiceEndPointInfo EndPointInfo { get; }
+
+        public TimeSpan AudioBufferSize { get; set; } = TimeSpan.FromMinutes(1);
 
         public bool TransmittingAudio { get; private set; } = false;
-
-        public int SampleRate { get; set; } = 48000;
-
-        public int PacketIntervalMilliseconds { get; set; } = 20;
-
-        public TimeSpan MaxPacketBuffer { get; set; } = TimeSpan.FromMinutes(5);
-
-        public int Channels { get; set; } = 2;
-
-        public byte[] EncryptionKey { get; set; }
-
-        public string EncryptionMode { get; set; }
-
-        public int LocalPort { get; set; }
-
-        public IPEndPoint SocketEndPoint { get; set; }
-
-        public uint Ssrc { get; set; }
 
         public event EventHandler OnAudioStart;
 
         public event EventHandler OnAudioStop;
 
-        public AudioStreamer(IAudioEncoder encoder, CancellationToken cancellationToken = default)
+        public AudioStreamer(IAudioEncoder encoder, VoiceEndPointInfo endPointInfo, CancellationToken cancellationToken = default)
         {
-            _encoder = encoder;
+            Encoder = encoder;
+            EndPointInfo = endPointInfo;
             _globalCancellationToken = cancellationToken;
 
             new Thread(() => AudioLoop().Wait()).Start();
@@ -67,27 +56,26 @@ namespace Driscod.Audio
 
         public string GetStatsString()
         {
-            return $"address={LocalPort}:{SocketEndPoint.Address}:{SocketEndPoint.Port},queuedPackets={QueuedPackets.Count}/{MaxQueuedPackets},silenceTime={_packetlessStopwatch.ElapsedMilliseconds}";
+            return $"address={EndPointInfo.LocalPort}:{EndPointInfo.SocketEndPoint.Address}:{EndPointInfo.SocketEndPoint.Port},queuedPackets={_rawPayloadQueue.Count}/{MaxQueuedPackets},silenceTime={_packetlessStopwatch.ElapsedMilliseconds}";
         }
 
         public void SendAudio(Stream sampleStream, CancellationToken cancellationToken = default)
         {
-            _encoder.Setup(SampleRate, Channels);
-            var chunk = new List<byte[]>();
+            var chunk = new List<float[]>();
             var bytesRead = 0;
 
             lock (_audioSendLock)
             {
                 while (!_globalCancellationToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                 {
-                    var sampleBytes = new byte[SamplesPerPacket * Channels * 4];
+                    var sampleBytes = new byte[SamplesPerPacket * Encoder.Channels * 4];
                     var bytesReadOfPacket = sampleStream.Read(sampleBytes, 0, sampleBytes.Length);
 
-                    chunk.Add(_encoder.Encode(CastSamplesAsFloats(sampleBytes)));
+                    chunk.Add(CastSamplesAsFloats(sampleBytes));
 
                     if (chunk.Count >= PacketChunkSize)
                     {
-                        EnqueuePackets(chunk);
+                        EnqueuePackets(chunk, cancellationToken: cancellationToken);
                         chunk.Clear();
                     }
 
@@ -96,10 +84,10 @@ namespace Driscod.Audio
                         break;
                     }
 
-                    bytesRead += SamplesPerPacket * Channels;
+                    bytesRead += SamplesPerPacket * Encoder.Channels;
                 }
 
-                EnqueuePackets(chunk);
+                EnqueuePackets(chunk, cancellationToken: cancellationToken);
             }
         }
 
@@ -110,22 +98,22 @@ namespace Driscod.Audio
 
         public void SendAudio(IAudioSource audioSource, CancellationToken cancellationToken = default)
         {
-            SendAudio(audioSource.GetSampleStream(SampleRate, Channels), cancellationToken: cancellationToken);
+            SendAudio(audioSource.GetSampleStream(Encoder.SampleRate, Encoder.Channels), cancellationToken: cancellationToken);
         }
 
         public void QueueSilence(int packets = 10)
         {
-            SendAudio(Enumerable.Repeat(0f, SamplesPerPacket * Channels * packets).ToArray());
+            SendAudio(Enumerable.Repeat(0f, SamplesPerPacket * Encoder.Channels * packets).ToArray());
         }
 
         public void ClearAudio()
         {
-            QueuedPackets.Clear();
+            _rawPayloadQueue.Clear();
         }
 
         private async Task AudioLoop()
         {
-            var socket = new UdpSocket(SocketEndPoint);
+            var socket = new UdpSocket(EndPointInfo.SocketEndPoint);
             var timer = new DriftTimer(TimeSpan.FromMilliseconds(PacketIntervalMilliseconds));
 
             uint timestamp = 0;
@@ -171,26 +159,37 @@ namespace Driscod.Audio
             }
         }
 
-        private void EnqueuePackets(IEnumerable<byte[]> packets)
+        private void EnqueuePackets(IEnumerable<float[]> packets, CancellationToken cancellationToken = default)
         {
             foreach (var packet in packets)
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
                 EnqueuePacket(packet);
             }
         }
 
-        private void EnqueuePacket(byte[] packet)
+        private void EnqueuePacket(float[] packet, CancellationToken cancellationToken = default)
         {
-            while (QueuedPackets.Count >= MaxQueuedPackets)
+            while (_rawPayloadQueue.Count >= MaxQueuedPackets && !cancellationToken.IsCancellationRequested)
             {
                 Thread.Sleep(PacketIntervalMilliseconds / 2);
             }
-            QueuedPackets.Enqueue(packet);
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            _rawPayloadQueue.Enqueue(packet);
         }
 
         private byte[] GetNextPacket(ushort sequence, uint timestamp)
         {
-            if (QueuedPackets.TryDequeue(out byte[] data))
+            if (_rawPayloadQueue.TryDequeue(out float[] payload))
             {
                 if (!TransmittingAudio)
                 {
@@ -202,7 +201,7 @@ namespace Driscod.Audio
                     }).Forget();
                 }
 
-                return AssemblePacket(data, sequence, timestamp);
+                return AssemblePacket(payload, sequence, timestamp);
             }
             else
             {
@@ -226,12 +225,12 @@ namespace Driscod.Audio
             return new byte[0];
         }
 
-        private byte[] AssemblePacket(byte[] data, ushort sequence, uint timestamp)
+        private byte[] AssemblePacket(float[] payload, ushort sequence, uint timestamp)
         {
             return new RtpPacketGenerator()
-                .CreateHeader(sequence, timestamp, Ssrc)
-                .AddPayload(data)
-                .EncryptPayload(EncryptionMode, EncryptionKey)
+                .CreateHeader(sequence, timestamp, EndPointInfo.Ssrc)
+                .AddPayload(Encoder.Encode(payload))
+                .EncryptPayload(EndPointInfo.EncryptionMode, EndPointInfo.EncryptionKey)
                 .Finalize();
         }
 
