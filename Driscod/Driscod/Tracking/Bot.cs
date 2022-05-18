@@ -465,7 +465,7 @@ namespace Driscod.Tracking
                         var guild = GetObject<Guild>(data["guild_id"].ToObject<string>());
                         if (guild != null)
                         {
-                            GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdateMember(data);
+                            guild.UpdateMember(data);
                         }
                     });
 
