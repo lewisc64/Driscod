@@ -462,7 +462,11 @@ namespace Driscod.Tracking
                     new[] { EventNames.GuildMemberAdd, EventNames.GuildMemberUpdate },
                     data =>
                     {
-                        GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdateMember(data);
+                        var guild = GetObject<Guild>(data["guild_id"].ToObject<string>());
+                        if (guild != null)
+                        {
+                            GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdateMember(data);
+                        }
                     });
 
                 shard.AddListener<JObject>(
