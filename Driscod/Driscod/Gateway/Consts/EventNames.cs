@@ -30,6 +30,12 @@
 
         public const string GuildRoleDelete = "GUILD_ROLE_DELETE";
 
+        public const string GuildMemberAdd = "GUILD_MEMBER_ADD";
+
+        public const string GuildMemberUpdate = "GUILD_MEMBER_UPDATE";
+
+        public const string GuildMemberRemove = "GUILD_MEMBER_REMOVE";
+
         public const string PresenceUpdate = "PRESENCE_UPDATE";
 
         public const string VoiceStateUpdate = "VOICE_STATE_UPDATE";

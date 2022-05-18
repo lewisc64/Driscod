@@ -1,4 +1,6 @@
 ﻿using Newtonsoft.Json.Linq;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Driscod.Tracking.Objects
 {
@@ -17,6 +19,10 @@ namespace Driscod.Tracking.Objects
         public bool Hoist { get; private set; }
 
         public int Color { get; private set; }
+
+        public Guild Guild => Bot.GetObjects<Guild>().FirstOrDefault(x => x.Roles.Any(y => y.Id == Id));
+
+        public IEnumerable<User> Users => Guild.Members.Where(x => x.Roles.Any(x => x.Id == Id)).Select(x => x.User);
 
         internal override void UpdateFromDocument(JObject doc)
         {

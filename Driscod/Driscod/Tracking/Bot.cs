@@ -456,6 +456,29 @@ namespace Driscod.Tracking
 
                         OnVoiceStateChange?.Invoke(this, (GetObject<Guild>(data["guild_id"].ToObject<string>()), GetObject<Channel>(data["channel_id"].ToObject<string>()), GetObject<User>(userId), deaf, mute));
                     });
+
+                shard.AddListener<JObject>(
+                    (int)Shard.MessageType.Dispatch,
+                    new[] { EventNames.GuildMemberAdd, EventNames.GuildMemberUpdate },
+                    data =>
+                    {
+                        GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdateMember(data);
+                    });
+
+                shard.AddListener<JObject>(
+                    (int)Shard.MessageType.Dispatch,
+                    EventNames.GuildMemberRemove,
+                    data =>
+                    {
+                        var userId = data["user"]["id"].ToObject<string>();
+                        GetObject<Guild>(data["guild_id"].ToObject<string>()).DeleteMember(userId);
+
+                        if (!Guilds.Any(x => x.Members.Any(y => y.User.Id == userId)))
+                        {
+                            Logger.Warn($"Deleted user '{userId}'");
+                            DeleteObject<User>(userId);
+                        }
+                    });
             }
         }
     }

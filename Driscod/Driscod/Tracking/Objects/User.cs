@@ -8,7 +8,7 @@ namespace Driscod.Tracking.Objects
     public class User : DiscordObject, IMessageable
     {
         public IEnumerable<Presence> Presences => Bot.Guilds
-            .Where(x => x.Members.Contains(this))
+            .Where(x => x.Members.Select(x => x.User).Contains(this))
             .Select(x => x.Presences.FirstOrDefault(x => x.User == this));
 
         public Presence Presence => Presences.FirstOrDefault();
