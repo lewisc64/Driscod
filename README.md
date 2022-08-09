@@ -17,13 +17,13 @@ using Driscod.Tracking;
 ...
 
 var bot = new Bot(TOKEN, Intents.All);
-bot.Start();
+await bot.Start();
 
-bot.OnMessage += (_, message) =>
+bot.OnMessage += async (_, message) =>
 {
     if (message.Author != bot.User && message.Content == "!ping")
     {
-        message.Channel.SendMessage("pong");
+        await message.Channel.SendMessage("pong");
     }
 };
 ```
@@ -43,16 +43,16 @@ public class TestBotWrapper : CommandBotWrapper
     }
 
     [Command("ping")]
-    public void Ping(Message message, string[] args)
+    public async Task Ping(Message message, string[] args)
     {
-        message.Channel.SendMessage("pong");
+        await message.Channel.SendMessage("pong");
     }
 }
 
 ...
 
 var bot = new Bot(TOKEN, Intents.All);
-bot.Start();
+await bot.Start();
 
 var testBot = new TestBotWrapper(bot);
 ```
@@ -63,16 +63,16 @@ Joins the voice channel the user is in, and plays an audio file.
 
 ```cs
 var bot = new Bot(TOKEN, Intents.All);
-bot.Start();
+await bot.Start();
 
-Bot.OnMessage += (_, message) =>
+Bot.OnMessage += async (_, message) =>
 {
     if (message.Content == "play me that tune")
     {
         var channel = message.Channel.Guild.VoiceStates.First(x => x.User == message.Author).Channel;
         using (var connection = channel.ConnectVoice())
         {
-            connection.PlaySync(new AudioFile(FILE_PATH));
+            await connection.PlayAudio(new AudioFile(FILE_PATH));
         }
     }
 };
@@ -84,7 +84,7 @@ The connection does not have to be used immediately.
 
 ```cs
 var bot = new Bot(TOKEN, Intents.All);
-bot.Start();
+await bot.Start();
 
 Bot.OnMessage += (_, message) =>
 {
@@ -95,11 +95,11 @@ Bot.OnMessage += (_, message) =>
     }
 };
 
-Bot.OnMessage += (_, message) =>
+Bot.OnMessage += async (_, message) =>
 {
     if (message.Content == "play")
     {
-        message.Channel.Guild.VoiceConnection.PlaySync(new YoutubeVideo(VIDEO_ID));
+        message.Channel.Guild.VoiceConnection.PlayAudio(new YoutubeVideo(VIDEO_ID));
     }
 };
 ```
