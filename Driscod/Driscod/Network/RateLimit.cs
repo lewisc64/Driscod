@@ -41,7 +41,7 @@ namespace Driscod.Network
             }
         }
 
-        public async Task PerformRequest(Func<HttpResponseMessage> callback)
+        public async Task PerformRequest(Func<Task<HttpResponseMessage>> callback)
         {
             await semaphore.WaitAsync();
 
@@ -60,7 +60,7 @@ namespace Driscod.Network
                         await Task.Delay(ResetAt.Value - DateTime.UtcNow);
                     }
 
-                    response = callback();
+                    response = await callback();
                     UpdateFromHeaders(response.Headers);
 
                     retryAfter = int.Parse(response.Headers.GetFirstValueOrNull("Retry-After") ?? "-1");

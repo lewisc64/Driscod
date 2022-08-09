@@ -1,4 +1,5 @@
-﻿using Driscod.Gateway;
+﻿using Driscod.Extensions;
+using Driscod.Gateway;
 using Driscod.Gateway.Consts;
 using Driscod.Network;
 using Driscod.Tracking.Objects;
@@ -10,7 +11,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
-using System.Threading;
+using System.Threading.Tasks;
 
 namespace Driscod.Tracking
 {
@@ -38,13 +39,13 @@ namespace Driscod.Tracking
 
         event EventHandler<(Guild Guild, User User)> OnUserJoin;
 
-        void Start();
+        Task Start();
 
-        void Stop();
+        Task Stop();
 
-        JObject SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null);
+        Task<JObject> SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null);
 
-        T SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null)
+        Task<T> SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null)
             where T : JContainer;
 
         T GetObject<T>(string id)
@@ -125,7 +126,7 @@ namespace Driscod.Tracking
             CreateDispatchListeners();
         }
 
-        public void Start()
+        public async Task Start()
         {
             var remainingConnections = JObject.Parse(HttpClient.GetAsync("gateway/bot").Result.Content.ReadAsStringAsync().Result)["session_start_limit"]["remaining"].ToObject<int>();
             if (remainingConnections < _shards.Count)
@@ -139,32 +140,32 @@ namespace Driscod.Tracking
 
             foreach (var shard in _shards)
             {
-                shard.Start();
-                Thread.Sleep(2000); // hmm...
+                await shard.Start();
+                await Task.Delay(2000); // hmm...
             }
             while (!Ready)
             {
-                // intentionally empty
+                await Task.Delay(10);
             }
         }
 
-        public void Stop()
+        public async Task Stop()
         {
             foreach (var shard in _shards)
             {
-                shard.Stop();
+                await shard.Stop();
             }
             Objects.Clear();
             RateLimitPathBucketMap.Clear();
             RateLimits.Clear();
         }
 
-        public JObject SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null)
+        public async Task<JObject> SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null)
         {
-            return SendJson<JObject>(method, pathFormat, pathParams, doc: doc, attachments: attachments, queryParams: queryParams);
+            return await SendJson<JObject>(method, pathFormat, pathParams, doc: doc, attachments: attachments, queryParams: queryParams);
         }
 
-        public T SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null)
+        public async Task<T> SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null)
             where T : JContainer
         {
             if (pathFormat.StartsWith("/"))
@@ -182,27 +183,15 @@ namespace Driscod.Tracking
                 requestPath += $"?{string.Join("&", queryParams.Where(kvp => kvp.Value != null).Select(kvp => $"{kvp.Key}={kvp.Value}"))}";
             }
 
-            Func<HttpResponseMessage> requestFunc = () =>
+            Func<Task<HttpResponseMessage>> requestFunc = async () =>
             {
                 var requestMessage = new HttpRequestMessage(method, requestPath);
 
                 if (attachments != null && attachments.Any())
                 {
-                    var content = new MultipartFormDataContent();
-                    if (json != null)
-                    {
-                        var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
-                        jsonContent.Headers.Add("Content-Disposition", "form-data; name=\"payload_json\"");
-                        content.Add(jsonContent);
-                    }
-                    for (var i = 0; i < attachments.Count(); i++)
-                    {
-                        var attachment = attachments.ElementAt(i);
-                        var fileContent = new ByteArrayContent(attachment.Content, 0, attachment.Content.Length);
-                        fileContent.Headers.Add("Content-Disposition", $"form-data; name=\"files[{i}]\"; filename=\"{attachment.FileName}\"");
-                        content.Add(fileContent);
-                    }
-                    requestMessage.Content = content;
+                    requestMessage.Content = new MultipartFormDataContent()
+                        .AddJsonPayload(json)
+                        .AddAttachments(attachments);
                 }
                 else
                 {
@@ -212,9 +201,8 @@ namespace Driscod.Tracking
                     }
                 }
 
-                var response = HttpClient.SendAsync(requestMessage).Result;
-
                 Logger.Debug($"{method} to '{requestPath}': {json}");
+                var response = await HttpClient.SendAsync(requestMessage);
 
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
@@ -232,11 +220,11 @@ namespace Driscod.Tracking
 
             if (RateLimitPathBucketMap.ContainsKey(key))
             {
-                RateLimits[RateLimitPathBucketMap[key]].PerformRequest(requestFunc).Wait();
+                await RateLimits[RateLimitPathBucketMap[key]].PerformRequest(requestFunc);
             }
             else
             {
-                var response = requestFunc();
+                var response = await requestFunc();
                 if (response.Headers.Contains("X-RateLimit-Bucket"))
                 {
                     var bucketId = response.Headers.First(x => x.Key.ToLower() == "X-RateLimit-Bucket".ToLower()).Value.First();

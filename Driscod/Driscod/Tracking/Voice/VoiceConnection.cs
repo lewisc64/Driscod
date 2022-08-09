@@ -104,23 +104,17 @@ namespace Driscod.Tracking.Voice
             }
         }
 
-        public void PlayAudioSync(IAudioSource audioSource, CancellationToken cancellationToken = default)
-        {
-            ThrowIfStale();
-            PlayAudio(audioSource, cancellationToken: cancellationToken).Wait();
-        }
-
-        public void StopAudio()
+        public Task StopAudio()
         {
             throw new NotImplementedException();
         }
 
-        public void Disconnect()
+        public Task Disconnect()
         {
             if (Guild == null)
             {
                 Logger.Warn("Attempted to disconnect a voice connection, but was unable to locate the guild. Assuming connection has already closed.");
-                return;
+                return Task.CompletedTask;
             }
 
             lock (Guild.VoiceLock)
@@ -134,6 +128,8 @@ namespace Driscod.Tracking.Voice
                     Guild.VoiceConnection = null;
                 }
             }
+
+            return Task.CompletedTask;
         }
 
         public void Dispose()

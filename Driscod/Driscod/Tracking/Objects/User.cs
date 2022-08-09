@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Threading.Tasks;
 
 namespace Driscod.Tracking.Objects
 {
@@ -21,30 +22,27 @@ namespace Driscod.Tracking.Objects
 
         public bool IsBot { get; private set; }
 
-        public Channel DmChannel
+        public async Task<Channel> GetDmChannel()
         {
-            get
-            {
-                var result = Bot.SendJson(HttpMethod.Post, @"users/{0}/channels", new[] { Bot.User.Id }, new JObject { { "recipient_id", Id } });
+            var result = await Bot.SendJson(HttpMethod.Post, @"users/{0}/channels", new[] { Bot.User.Id }, new JObject { { "recipient_id", Id } });
 
-                Bot.CreateOrUpdateObject<Channel>(result);
-                return Bot.GetObject<Channel>(result["id"].ToObject<string>());
-            }
+            Bot.CreateOrUpdateObject<Channel>(result);
+            return Bot.GetObject<Channel>(result["id"].ToObject<string>());
         }
 
-        public void SendMessage(MessageEmbed embed)
+        public async Task SendMessage(MessageEmbed embed)
         {
-            SendMessage(null, embed);
+            await SendMessage(null, embed);
         }
 
-        public void SendMessage(IMessageAttachment file)
+        public async Task SendMessage(IMessageAttachment file)
         {
-            SendMessage(null, attachments: new[] { file });
+            await SendMessage(null, attachments: new[] { file });
         }
 
-        public void SendMessage(string message, MessageEmbed embed = null, IEnumerable<IMessageAttachment> attachments = null)
+        public async Task SendMessage(string message, MessageEmbed embed = null, IEnumerable<IMessageAttachment> attachments = null)
         {
-            DmChannel.SendMessage(message, embed: embed, attachments: attachments);
+            await (await GetDmChannel()).SendMessage(message, embed: embed, attachments: attachments);
         }
 
         public string CreateMention()

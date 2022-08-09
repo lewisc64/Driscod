@@ -4,6 +4,7 @@ using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Threading.Tasks;
 
 namespace Driscod.Tracking.Objects
 {
@@ -22,22 +23,7 @@ namespace Driscod.Tracking.Objects
 
         public Channel Channel => Bot.GetObject<Channel>(_channelId);
 
-        public string Content
-        {
-            get
-            {
-                return _content;
-            }
-
-            set
-            {
-                _content = value;
-                UpdateFromDocument(Bot.SendJson(HttpMethod.Patch, Connectivity.ChannelMessagePathFormat, new[] { Channel.Id, Id }, new JObject
-                {
-                    { "content", _content },
-                }));
-            }
-        }
+        public string Content => _content;
 
         public IEnumerable<MessageEmbed> Embeds { get; set; }
 
@@ -45,9 +31,34 @@ namespace Driscod.Tracking.Objects
 
         public IEnumerable<Reaction> MyReactions => Reactions.Where(x => x.BotUserReacted);
 
-        public Message PreviousMessage => GetRelativeMessage("before");
+        public async Task Edit(string newContent)
+        {
+            UpdateFromDocument(
+                await Bot.SendJson(
+                    HttpMethod.Patch,
+                    Connectivity.ChannelMessagePathFormat,
+                    new[]
+                    {
+                        Channel.Id,
+                        Id
+                    },
+                    new JObject
+                    {
+                        { "content", _content },
+                    }));
 
-        public Message NextMessage => GetRelativeMessage("after");
+            _content = newContent;
+        }
+
+        public async Task<Message> GetPreviousMessage()
+        {
+            return await GetRelativeMessage("before");
+        }
+
+        public async Task<Message> GetNextMessage()
+        {
+            return await GetRelativeMessage("after");
+        }
 
         public override string ToString()
         {
@@ -79,13 +90,22 @@ namespace Driscod.Tracking.Objects
             Embeds = doc["embeds"].Select(x => x.ToObject<MessageEmbed>());
         }
 
-        private Message GetRelativeMessage(string paramName)
+        private async Task<Message> GetRelativeMessage(string paramName)
         {
-            var doc = Bot.SendJson<JArray>(
+            var doc = (await Bot.SendJson<JArray>(
                 HttpMethod.Get,
                 Connectivity.ChannelMessagesPathFormat,
-                new[] { Channel.Id },
-                queryParams: new Dictionary<string, string>() { { paramName, Id }, { "limit", "1" } })?.ToObject<JObject[]>().FirstOrDefault();
+                new[]
+                {
+                    Channel.Id
+                },
+                queryParams: new Dictionary<string, string>()
+                {
+                    { paramName, Id },
+                    { "limit", "1" }
+                }))
+                ?.ToObject<JObject[]>()
+                .FirstOrDefault();
 
             if (doc == null)
             {

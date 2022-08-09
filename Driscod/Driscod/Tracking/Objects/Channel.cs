@@ -43,48 +43,45 @@ namespace Driscod.Tracking.Objects
 
         public int Bitrate { get; private set; }
 
-        public IEnumerable<Message> Messages
+        public async IAsyncEnumerable<Message> GetMessages()
         {
-            get
+            string before = null;
+            JArray messages = null;
+
+            while (messages == null || messages.Any())
             {
-                string before = null;
-                JArray messages = null;
+                messages = await Bot.SendJson<JArray>(
+                    HttpMethod.Get,
+                    Connectivity.ChannelMessagesPathFormat,
+                    new[] { Id },
+                    queryParams: new Dictionary<string, string>() { { "before", before } });
 
-                while (messages == null || messages.Any())
+                foreach (var doc in messages)
                 {
-                    messages = Bot.SendJson<JArray>(
-                        HttpMethod.Get,
-                        Connectivity.ChannelMessagesPathFormat,
-                        new[] { Id },
-                        queryParams: new Dictionary<string, string>() { { "before", before } });
-
-                    foreach (var doc in messages)
+                    var message = new Message
                     {
-                        var message = new Message
-                        {
-                            DiscoveredOnShard = DiscoveredOnShard,
-                            Bot = Bot,
-                        };
-                        message.UpdateFromDocument(doc.ToObject<JObject>());
+                        DiscoveredOnShard = DiscoveredOnShard,
+                        Bot = Bot,
+                    };
+                    message.UpdateFromDocument(doc.ToObject<JObject>());
 
-                        yield return message;
-                        before = message.Id;
-                    }
+                    yield return message;
+                    before = message.Id;
                 }
             }
         }
 
-        public void SendMessage(MessageEmbed embed)
+        public async Task SendMessage(MessageEmbed embed)
         {
-            SendMessage(null, embed);
+            await SendMessage(null, embed);
         }
 
-        public void SendMessage(IMessageAttachment file)
+        public async Task SendMessage(IMessageAttachment file)
         {
-            SendMessage(null, attachments: new[] { file });
+            await SendMessage(null, attachments: new[] { file });
         }
 
-        public void SendMessage(string message, MessageEmbed embed = null, IEnumerable<IMessageAttachment> attachments = null)
+        public async Task SendMessage(string message, MessageEmbed embed = null, IEnumerable<IMessageAttachment> attachments = null)
         {
             if (message == null && embed == null && attachments == null)
             {
@@ -118,7 +115,7 @@ namespace Driscod.Tracking.Objects
                 body["embed"] = JObject.FromObject(embed);
             }
 
-            Bot.SendJson(HttpMethod.Post, Connectivity.ChannelMessagesPathFormat, new[] { Id }, doc: body, attachments: attachments);
+            await Bot.SendJson(HttpMethod.Post, Connectivity.ChannelMessagesPathFormat, new[] { Id }, doc: body, attachments: attachments);
         }
 
         public VoiceConnection ConnectVoice()
