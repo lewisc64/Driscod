@@ -19,7 +19,7 @@ namespace Driscod.Tracking.Objects
         Category = 4,
     }
 
-    public class Channel : DiscordObject, IMessageable
+    public class Channel : DiscordObject, IMessageable, IMentionable
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
@@ -207,6 +207,15 @@ namespace Driscod.Tracking.Objects
             }
 
             return Guild.VoiceConnection;
+        }
+
+        public string CreateMention()
+        {
+            if (ChannelType != ChannelType.Text)
+            {
+                throw new InvalidOperationException("Only text channels can be mentioned.");
+            }
+            return $"<#{Id}>";
         }
 
         internal override void UpdateFromDocument(JObject doc)

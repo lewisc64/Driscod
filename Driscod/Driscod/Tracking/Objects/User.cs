@@ -5,7 +5,7 @@ using System.Net.Http;
 
 namespace Driscod.Tracking.Objects
 {
-    public class User : DiscordObject, IMessageable
+    public class User : DiscordObject, IMessageable, IMentionable
     {
         public IEnumerable<Presence> Presences => Bot.Guilds
             .Where(x => x.Members.Select(x => x.User).Contains(this))
@@ -45,6 +45,11 @@ namespace Driscod.Tracking.Objects
         public void SendMessage(string message, MessageEmbed embed = null, IEnumerable<IMessageAttachment> attachments = null)
         {
             DmChannel.SendMessage(message, embed: embed, attachments: attachments);
+        }
+
+        public string CreateMention()
+        {
+            return $"<@{Id}>";
         }
 
         public override string ToString()
