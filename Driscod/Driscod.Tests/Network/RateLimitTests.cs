@@ -63,7 +63,7 @@ namespace Driscod.Tests.Network
                             firstCompleted = true;
                         }
 
-                        return response;
+                        return Task.FromResult(response);
                     });
                 }),
                 Task.Run(async () =>
@@ -78,10 +78,10 @@ namespace Driscod.Tests.Network
                         stopwatch.Stop();
                         Assert.GreaterOrEqual(stopwatch.Elapsed.TotalMilliseconds, 50 - 2);
                         Assert.IsTrue(firstCompleted);
-                        return new HttpResponseMessage
+                        return Task.FromResult(new HttpResponseMessage
                         {
                             StatusCode = HttpStatusCode.OK
-                        };
+                        });
                     });
                 }));
         }
@@ -118,7 +118,7 @@ namespace Driscod.Tests.Network
                 }
 
                 callNumber++;
-                return response;
+                return Task.FromResult(response);
             });
 
             Assert.AreEqual(statusSequence.Length, callNumber, "Callback should be called enough times.");
