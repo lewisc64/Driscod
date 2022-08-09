@@ -90,6 +90,7 @@ namespace Driscod.Tracking.Objects
         internal void DeleteMember(string userId)
         {
             _members.RemoveAll(x => x.User.Id == userId);
+            _presences.RemoveAll(x => x.User.Id == userId);
         }
 
         internal void UpdateVoiceState(JObject doc)

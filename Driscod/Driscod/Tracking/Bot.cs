@@ -36,6 +36,8 @@ namespace Driscod.Tracking
 
         event EventHandler<(Guild Guild, Channel Channel, User User, bool IsDeaf, bool IsMuted)> OnVoiceStateChange;
 
+        event EventHandler<(Guild Guild, User User)> OnUserJoin;
+
         void Start();
 
         void Stop();
@@ -111,6 +113,8 @@ namespace Driscod.Tracking
         public event EventHandler<(Channel Channel, User User)> OnTyping;
 
         public event EventHandler<(Guild Guild, Channel Channel, User User, bool IsDeaf, bool IsMuted)> OnVoiceStateChange;
+
+        public event EventHandler<(Guild Guild, User User)> OnUserJoin;
 
         public Bot(string token, Intents intents)
         {
@@ -459,7 +463,20 @@ namespace Driscod.Tracking
 
                 shard.AddListener<JObject>(
                     (int)Shard.MessageType.Dispatch,
-                    new[] { EventNames.GuildMemberAdd, EventNames.GuildMemberUpdate },
+                    new[] { EventNames.GuildMemberAdd },
+                    data =>
+                    {
+                        var guild = GetObject<Guild>(data["guild_id"].ToObject<string>());
+                        if (guild != null)
+                        {
+                            guild.UpdateMember(data);
+                            OnUserJoin?.Invoke(this, (guild, GetObject<User>(data["user"]["id"].ToObject<string>())));
+                        }
+                    });
+
+                shard.AddListener<JObject>(
+                    (int)Shard.MessageType.Dispatch,
+                    new[] { EventNames.GuildMemberUpdate },
                     data =>
                     {
                         var guild = GetObject<Guild>(data["guild_id"].ToObject<string>());
