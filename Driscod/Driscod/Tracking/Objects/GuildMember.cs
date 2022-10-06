@@ -1,7 +1,10 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using Driscod.Network;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
 
 namespace Driscod.Tracking.Objects
 {
@@ -20,6 +23,26 @@ namespace Driscod.Tracking.Objects
         public string Nickname { get; private set; }
 
         public DateTime JoinedAt { get; private set; }
+
+        public async Task AssignRole(Role role)
+        {
+            if (Roles.Contains(role))
+            {
+                throw new ArgumentException("Guild member already has that role", nameof(role));
+            }
+
+            await Bot.SendJson(HttpMethod.Put, Connectivity.GuildMemberRolePathFormat, new[] { _guildId, _userId, role.Id });
+        }
+
+        public async Task RemoveRole(Role role)
+        {
+            if (!Roles.Contains(role))
+            {
+                throw new ArgumentException("Guild member does not have that role", nameof(role));
+            }
+
+            await Bot.SendJson(HttpMethod.Delete, Connectivity.GuildMemberRolePathFormat, new[] { _guildId, _userId, role.Id });
+        }
 
         internal override void UpdateFromDocument(JObject doc)
         {

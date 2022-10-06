@@ -204,7 +204,7 @@ namespace Driscod.Tracking
                 Logger.Debug($"{method} to '{requestPath}': {json}");
                 var response = await HttpClient.SendAsync(requestMessage);
 
-                if (response.StatusCode == HttpStatusCode.OK)
+                if (response.IsSuccessStatusCode)
                 {
                     output = JsonConvert.DeserializeObject<T>(response.Content.ReadAsStringAsync().Result);
                 }
@@ -234,6 +234,7 @@ namespace Driscod.Tracking
                         RateLimits[bucketId] = new RateLimit(bucketId);
                     }
                 }
+                response.EnsureSuccessStatusCode();
             }
 
             return output;

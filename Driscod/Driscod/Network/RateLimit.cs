@@ -47,7 +47,7 @@ namespace Driscod.Network
 
             try
             {
-                HttpResponseMessage response;
+                HttpResponseMessage response = null;
                 int retryAfter = -1;
                 do
                 {
@@ -60,8 +60,18 @@ namespace Driscod.Network
                         await Task.Delay(ResetAt.Value - DateTime.UtcNow);
                     }
 
-                    response = await callback();
-                    UpdateFromHeaders(response.Headers);
+                    try
+                    {
+                        response = await callback();
+                    }
+                    finally
+                    {
+                        if (response is not null)
+                        {
+                            UpdateFromHeaders(response.Headers);
+                        }
+                    }
+                    response.EnsureSuccessStatusCode();
 
                     retryAfter = int.Parse(response.Headers.GetFirstValueOrNull("Retry-After") ?? "-1");
                 }
