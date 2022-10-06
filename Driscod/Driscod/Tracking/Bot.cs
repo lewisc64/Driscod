@@ -208,7 +208,7 @@ namespace Driscod.Tracking
                 {
                     output = JsonConvert.DeserializeObject<T>(response.Content.ReadAsStringAsync().Result);
                 }
-                else
+                else if (response.StatusCode != HttpStatusCode.TooManyRequests)
                 {
                     Logger.Error($"Failed to send to '{requestPath}': {response.StatusCode}");
                 }
