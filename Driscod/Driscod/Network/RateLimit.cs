@@ -71,11 +71,14 @@ namespace Driscod.Network
                             UpdateFromHeaders(response.Headers);
                         }
                     }
-                    response.EnsureSuccessStatusCode();
+                    if (response.StatusCode != HttpStatusCode.TooManyRequests)
+                    {
+                        response.EnsureSuccessStatusCode();
+                    }
 
                     retryAfter = int.Parse(response.Headers.GetFirstValueOrNull("Retry-After") ?? "-1");
                 }
-                while (response.StatusCode == (HttpStatusCode)429);
+                while (response.StatusCode == HttpStatusCode.TooManyRequests);
             }
             finally
             {
