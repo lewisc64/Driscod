@@ -29,27 +29,13 @@ namespace Driscod.Audio
             return await new AudioFile(StreamInfo.Url).GetSampleStream(sampleRate, channels);
         }
 
-        public static IEnumerable<YoutubeVideo> CreateFromPlaylist(string playlistId)
+        public static async IAsyncEnumerable<YoutubeVideo> CreateFromPlaylist(string playlistId)
         {
             var youtube = new YoutubeClient();
-            var videoEnumerator = youtube.Playlists.GetVideosAsync(playlistId).GetAsyncEnumerator();
 
-            while (videoEnumerator.Current != null)
+            await foreach (var video in youtube.Playlists.GetVideosAsync(playlistId))
             {
-                YoutubeVideo source;
-                try
-                {
-                    source = new YoutubeVideo(videoEnumerator.Current.Id);
-                }
-                catch
-                {
-                    // ignored, probably unavailable.
-                    continue;
-                }
-
-                yield return source;
-
-                videoEnumerator.MoveNextAsync().GetAwaiter().GetResult();
+                yield return new YoutubeVideo(video.Id);
             }
         }
 
