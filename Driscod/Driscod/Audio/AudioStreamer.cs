@@ -162,7 +162,7 @@ namespace Driscod.Audio
         {
             while (_rawPayloadQueue.Count >= MaxQueuedPackets && !cancellationToken.IsCancellationRequested)
             {
-                await Task.Delay(PacketIntervalMilliseconds);
+                await Task.Delay(PacketIntervalMilliseconds / 2);
             }
 
             if (cancellationToken.IsCancellationRequested)
