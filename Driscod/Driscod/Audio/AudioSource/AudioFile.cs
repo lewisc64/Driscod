@@ -3,6 +3,7 @@ using NAudio.Wave.SampleProviders;
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace Driscod.Audio
 {
@@ -17,7 +18,7 @@ namespace Driscod.Audio
             _path = path ?? throw new ArgumentNullException(nameof(path), $"'{nameof(path)}' cannot be null.");
         }
 
-        public Stream GetSampleStream(int sampleRate, int channels)
+        public Task<Stream> GetSampleStream(int sampleRate, int channels)
         {
             if (channels != 1 && channels != 2)
             {
@@ -38,7 +39,7 @@ namespace Driscod.Audio
                         break;
                 }
 
-                return new SamplerWrapper(sampler);
+                return Task.FromResult<Stream>(new SamplerWrapper(sampler));
             }
         }
 

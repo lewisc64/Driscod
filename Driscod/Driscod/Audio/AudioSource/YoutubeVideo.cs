@@ -24,9 +24,9 @@ namespace Driscod.Audio
             FetchStreamInfo().Wait();
         }
 
-        public Stream GetSampleStream(int sampleRate, int channels)
+        public async Task<Stream> GetSampleStream(int sampleRate, int channels)
         {
-            return new AudioFile(StreamInfo.Url).GetSampleStream(sampleRate, channels);
+            return await new AudioFile(StreamInfo.Url).GetSampleStream(sampleRate, channels);
         }
 
         public static IEnumerable<YoutubeVideo> CreateFromPlaylist(string playlistId)

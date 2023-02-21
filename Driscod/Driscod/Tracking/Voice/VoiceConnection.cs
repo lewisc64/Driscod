@@ -93,8 +93,8 @@ namespace Driscod.Tracking.Voice
                     }
                 });
                 inControl = true;
-                AudioStreamer.SendAudio(audioSource, cancellationToken: cancellationToken);
-                AudioStreamer.QueueSilence();
+                await AudioStreamer.SendAudio(audioSource, cancellationToken: cancellationToken);
+                await AudioStreamer.QueueSilence();
                 await tcs.Task;
             }
             finally
@@ -102,11 +102,6 @@ namespace Driscod.Tracking.Voice
                 inControl = false;
                 AudioStreamer.OnAudioStop -= handler;
             }
-        }
-
-        public Task StopAudio()
-        {
-            throw new NotImplementedException();
         }
 
         public Task Disconnect()

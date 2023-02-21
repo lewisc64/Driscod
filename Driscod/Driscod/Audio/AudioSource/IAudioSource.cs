@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Threading.Tasks;
 
 namespace Driscod.Audio
 {
@@ -6,6 +7,6 @@ namespace Driscod.Audio
     {
         string Name { get; }
 
-        Stream GetSampleStream(int sampleRate, int channels);
+        Task<Stream> GetSampleStream(int sampleRate, int channels);
     }
 }

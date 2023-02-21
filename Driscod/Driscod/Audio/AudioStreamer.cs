@@ -18,16 +18,19 @@ namespace Driscod.Audio
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
         private const int PacketChunkSize = 16;
-
         private const int PacketIntervalMilliseconds = 20;
-
-        private readonly object _audioSendLock = new object();
-
         private readonly Stopwatch _packetlessStopwatch = new Stopwatch();
-
         private readonly ConcurrentQueue<float[]> _rawPayloadQueue = new ConcurrentQueue<float[]>();
+        private readonly CancellationToken _globalCancellationToken;
 
-        private CancellationToken _globalCancellationToken;
+        public AudioStreamer(IAudioEncoder encoder, VoiceEndPointInfo endPointInfo, CancellationToken cancellationToken = default)
+        {
+            Encoder = encoder;
+            EndPointInfo = endPointInfo;
+            _globalCancellationToken = cancellationToken;
+
+            new Thread(() => AudioLoop().Wait()).Start();
+        }
 
         private int SamplesPerPacket => Encoder.SampleRate * PacketIntervalMilliseconds / 1000;
 
@@ -45,60 +48,48 @@ namespace Driscod.Audio
 
         public event EventHandler OnAudioStop;
 
-        public AudioStreamer(IAudioEncoder encoder, VoiceEndPointInfo endPointInfo, CancellationToken cancellationToken = default)
-        {
-            Encoder = encoder;
-            EndPointInfo = endPointInfo;
-            _globalCancellationToken = cancellationToken;
-
-            new Thread(() => AudioLoop().Wait()).Start();
-        }
-
-        public void SendAudio(Stream sampleStream, CancellationToken cancellationToken = default)
+        public async Task SendAudio(Stream sampleStream, CancellationToken cancellationToken = default)
         {
             var chunk = new List<float[]>();
             var bytesRead = 0;
 
-            lock (_audioSendLock)
+            while (!_globalCancellationToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
-                while (!_globalCancellationToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                var sampleBytes = new byte[SamplesPerPacket * Encoder.Channels * 4];
+                var bytesReadOfPacket = sampleStream.Read(sampleBytes, 0, sampleBytes.Length);
+
+                chunk.Add(CastSamplesAsFloats(sampleBytes));
+
+                if (chunk.Count >= PacketChunkSize)
                 {
-                    var sampleBytes = new byte[SamplesPerPacket * Encoder.Channels * 4];
-                    var bytesReadOfPacket = sampleStream.Read(sampleBytes, 0, sampleBytes.Length);
-
-                    chunk.Add(CastSamplesAsFloats(sampleBytes));
-
-                    if (chunk.Count >= PacketChunkSize)
-                    {
-                        EnqueuePackets(chunk, cancellationToken: cancellationToken);
-                        chunk.Clear();
-                    }
-
-                    if (bytesReadOfPacket < sampleBytes.Length)
-                    {
-                        break;
-                    }
-
-                    bytesRead += SamplesPerPacket * Encoder.Channels;
+                    await EnqueuePackets(chunk, cancellationToken: cancellationToken);
+                    chunk.Clear();
                 }
 
-                EnqueuePackets(chunk, cancellationToken: cancellationToken);
+                if (bytesReadOfPacket < sampleBytes.Length)
+                {
+                    break;
+                }
+
+                bytesRead += SamplesPerPacket * Encoder.Channels;
             }
+
+            await EnqueuePackets(chunk, cancellationToken: cancellationToken);
         }
 
-        public void SendAudio(float[] samples, CancellationToken cancellationToken = default)
+        public async Task SendAudio(float[] samples, CancellationToken cancellationToken = default)
         {
-            SendAudio(new MemoryStream(samples.SelectMany(x => BitConverter.GetBytes(x)).ToArray()), cancellationToken: cancellationToken);
+            await SendAudio(new MemoryStream(samples.SelectMany(x => BitConverter.GetBytes(x)).ToArray()), cancellationToken: cancellationToken);
         }
 
-        public void SendAudio(IAudioSource audioSource, CancellationToken cancellationToken = default)
+        public async Task SendAudio(IAudioSource audioSource, CancellationToken cancellationToken = default)
         {
-            SendAudio(audioSource.GetSampleStream(Encoder.SampleRate, Encoder.Channels), cancellationToken: cancellationToken);
+            await SendAudio(await audioSource.GetSampleStream(Encoder.SampleRate, Encoder.Channels), cancellationToken: cancellationToken);
         }
 
-        public void QueueSilence(int packets = 10)
+        public async Task QueueSilence(int packets = 10)
         {
-            SendAudio(Enumerable.Repeat(0f, SamplesPerPacket * Encoder.Channels * packets).ToArray());
+            await SendAudio(Enumerable.Repeat(0f, SamplesPerPacket * Encoder.Channels * packets).ToArray());
         }
 
         public void ClearAudio()
@@ -154,7 +145,7 @@ namespace Driscod.Audio
             }
         }
 
-        private void EnqueuePackets(IEnumerable<float[]> packets, CancellationToken cancellationToken = default)
+        private async Task EnqueuePackets(IEnumerable<float[]> packets, CancellationToken cancellationToken = default)
         {
             foreach (var packet in packets)
             {
@@ -163,15 +154,15 @@ namespace Driscod.Audio
                     return;
                 }
 
-                EnqueuePacket(packet);
+                await EnqueuePacket(packet);
             }
         }
 
-        private void EnqueuePacket(float[] packet, CancellationToken cancellationToken = default)
+        private async Task EnqueuePacket(float[] packet, CancellationToken cancellationToken = default)
         {
             while (_rawPayloadQueue.Count >= MaxQueuedPackets && !cancellationToken.IsCancellationRequested)
             {
-                Thread.Sleep(PacketIntervalMilliseconds / 2);
+                await Task.Delay(PacketIntervalMilliseconds);
             }
 
             if (cancellationToken.IsCancellationRequested)
