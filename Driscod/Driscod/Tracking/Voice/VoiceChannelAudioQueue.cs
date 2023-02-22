@@ -151,20 +151,17 @@ namespace Driscod.Tracking.Voice
         {
             VoiceConnection.OnStopAudio += (a, b) =>
             {
-                lock (_internalMusicQueue)
+                if (_internalMusicQueue.Any())
                 {
+                    _internalMusicQueue.TryDequeue(out var _);
                     if (_internalMusicQueue.Any())
                     {
-                        _internalMusicQueue.TryDequeue(out var _);
-                        if (_internalMusicQueue.Any())
-                        {
-                            PlayNext();
-                        }
+                        PlayNext();
                     }
-                    if (!_internalMusicQueue.Any())
-                    {
-                        OnQueueEmpty?.Invoke(this, EventArgs.Empty);
-                    }
+                }
+                if (!_internalMusicQueue.Any())
+                {
+                    OnQueueEmpty?.Invoke(this, EventArgs.Empty);
                 }
             };
         }
