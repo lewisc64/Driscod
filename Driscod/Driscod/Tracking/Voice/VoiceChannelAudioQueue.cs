@@ -16,6 +16,7 @@ namespace Driscod.Tracking.Voice
         private bool _disposed = false;
         private CancellationTokenSource _playingCancellationTokenSource = new();
         private ConcurrentQueue<MusicQueueItem> _internalMusicQueue = new ConcurrentQueue<MusicQueueItem>();
+        private Task audioPlayTask = null;
 
         public event EventHandler<MusicQueueItem> OnAudioAdded;
         public event EventHandler<MusicQueueItem> OnAudioPlay;
@@ -127,9 +128,10 @@ namespace Driscod.Tracking.Voice
         {
             if (disposing)
             {
-                _playingCancellationTokenSource.Cancel();
-                _playingCancellationTokenSource = null;
                 _internalMusicQueue.Clear();
+                _playingCancellationTokenSource.Cancel();
+                audioPlayTask.Wait();
+                _playingCancellationTokenSource = null;
                 _internalMusicQueue = null;
                 Guild.VoiceConnection?.Dispose();
                 Bot = null;
