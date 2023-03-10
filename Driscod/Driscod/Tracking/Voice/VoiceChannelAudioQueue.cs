@@ -128,9 +128,12 @@ namespace Driscod.Tracking.Voice
         {
             if (disposing)
             {
+                OnAudioAdded = null;
+                OnAudioPlay = null;
+                OnQueueEmpty = null;
                 _internalMusicQueue.Clear();
                 _playingCancellationTokenSource.Cancel();
-                audioPlayTask.Wait();
+                audioPlayTask?.Wait();
                 _playingCancellationTokenSource = null;
                 _internalMusicQueue = null;
                 Guild.VoiceConnection?.Dispose();
@@ -143,7 +146,7 @@ namespace Driscod.Tracking.Voice
         {
             if (_internalMusicQueue.TryPeek(out var item))
             {
-                VoiceConnection.PlayAudio(item.AudioSource, cancellationToken: _playingCancellationTokenSource.Token)
+                var _audioPlayTask = VoiceConnection.PlayAudio(item.AudioSource, cancellationToken: _playingCancellationTokenSource.Token)
                     .ContinueWith(_ =>
                     {
                         if (_internalMusicQueue.TryDequeue(out var _) && _internalMusicQueue.Any())
