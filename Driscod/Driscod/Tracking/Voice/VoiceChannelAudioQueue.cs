@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Driscod.Tracking.Voice
 {
@@ -24,8 +25,6 @@ namespace Driscod.Tracking.Voice
         {
             Bot = channel.Bot;
             Channel = channel;
-
-            CreateListeners();
         }
 
         private IBot Bot { get; set; }
@@ -142,28 +141,19 @@ namespace Driscod.Tracking.Voice
         {
             if (_internalMusicQueue.TryPeek(out var item))
             {
-                OnAudioPlay?.Invoke(this, item);
-                VoiceConnection.PlayAudio(item.AudioSource, cancellationToken: _playingCancellationTokenSource.Token).Forget();
-            }
-        }
-
-        private void CreateListeners()
-        {
-            VoiceConnection.OnStopAudio += (a, b) =>
-            {
-                if (_internalMusicQueue.Any())
-                {
-                    _internalMusicQueue.TryDequeue(out var _);
-                    if (_internalMusicQueue.Any())
+                VoiceConnection.PlayAudio(item.AudioSource, cancellationToken: _playingCancellationTokenSource.Token)
+                    .ContinueWith(_ =>
                     {
-                        PlayNext();
-                    }
-                }
-                if (!_internalMusicQueue.Any())
-                {
-                    OnQueueEmpty?.Invoke(this, EventArgs.Empty);
-                }
-            };
+                        if (_internalMusicQueue.TryDequeue(out var _) && _internalMusicQueue.Any())
+                        {
+                            PlayNext();
+                        } else
+                        {
+                            OnQueueEmpty?.Invoke(this, EventArgs.Empty);
+                        }
+                    });
+                OnAudioPlay?.Invoke(this, item);
+            }
         }
 
         private void ThrowIfDisposed()

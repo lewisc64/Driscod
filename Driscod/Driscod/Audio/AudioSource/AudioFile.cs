@@ -11,7 +11,7 @@ namespace Driscod.Audio
     {
         private readonly string _path;
 
-        public string Name => _path.Split(new[] { '\\', '/' }).Last();
+        public string Name => _path.Split('\\', '/').Last();
 
         public AudioFile(string path)
         {
@@ -43,7 +43,7 @@ namespace Driscod.Audio
             }
         }
 
-        private class SamplerWrapper : Stream
+        private sealed class SamplerWrapper : Stream
         {
             private readonly ISampleProvider _sampler;
 
