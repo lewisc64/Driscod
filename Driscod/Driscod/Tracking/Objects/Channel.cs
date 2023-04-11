@@ -23,7 +23,7 @@ namespace Driscod.Tracking.Objects
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
-        private static readonly ChannelType[] UnmessagableChannelTypes = new[] { ChannelType.Voice, ChannelType.Category };
+        private static readonly ChannelType[] UnmessagableChannelTypes = new[] { ChannelType.Category };
 
         private string _guildId;
 

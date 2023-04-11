@@ -152,7 +152,8 @@ namespace Driscod.Tracking.Voice
                         if (_internalMusicQueue.TryDequeue(out var _) && _internalMusicQueue.Any())
                         {
                             PlayNext();
-                        } else
+                        }
+                        else
                         {
                             OnQueueEmpty?.Invoke(this, EventArgs.Empty);
                         }
