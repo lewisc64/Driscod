@@ -155,6 +155,7 @@ namespace Driscod.Tracking.Voice
                 catch (Exception ex)
                 {
                     Logger.Error(ex);
+                    await Task.Delay(1000);
                 }
             }
         }
