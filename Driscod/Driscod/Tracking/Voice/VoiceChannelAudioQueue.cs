@@ -12,11 +12,14 @@ namespace Driscod.Tracking.Voice
 {
     public class VoiceChannelAudioQueue : IDisposable
     {
+        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
         private string _channelId;
         private bool _disposed = false;
+        private CancellationTokenSource _cancellationTokenSource = new();
         private CancellationTokenSource _playingCancellationTokenSource = new();
         private ConcurrentQueue<MusicQueueItem> _internalMusicQueue = new ConcurrentQueue<MusicQueueItem>();
-        private Task _audioPlayTask = null;
+        private readonly Task _handleQueueTask;
 
         public event EventHandler<MusicQueueItem> OnAudioAdded;
         public event EventHandler<MusicQueueItem> OnAudioPlay;
@@ -26,6 +29,8 @@ namespace Driscod.Tracking.Voice
         {
             Bot = channel.Bot;
             Channel = channel;
+
+            _handleQueueTask = HandleQueue();
         }
 
         private IBot Bot { get; set; }
@@ -94,19 +99,13 @@ namespace Driscod.Tracking.Voice
             _internalMusicQueue.Enqueue(musicQueueItem);
 
             OnAudioAdded?.Invoke(this, musicQueueItem);
-
-            if (_internalMusicQueue.Count == 1)
-            {
-                PlayNext();
-            }
         }
 
         public void Skip()
         {
             ThrowIfDisposed();
 
-            _playingCancellationTokenSource.Cancel();
-            _playingCancellationTokenSource = new CancellationTokenSource();
+            CancelCurrentPlay();
         }
 
         public void ClearQueue()
@@ -114,8 +113,50 @@ namespace Driscod.Tracking.Voice
             ThrowIfDisposed();
 
             _internalMusicQueue.Clear();
-            _playingCancellationTokenSource.Cancel();
+            CancelCurrentPlay();
+        }
+
+        private void CancelCurrentPlay()
+        {
+            var oldSource = _playingCancellationTokenSource;
             _playingCancellationTokenSource = new CancellationTokenSource();
+            oldSource.Cancel();
+        }
+
+        private async Task HandleQueue()
+        {
+            while (!_cancellationTokenSource.IsCancellationRequested)
+            {
+                try
+                {
+                    if (_internalMusicQueue.TryPeek(out var item))
+                    {
+                        try
+                        {
+                            var combinedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, _playingCancellationTokenSource.Token);
+                            OnAudioPlay?.Invoke(this, item);
+                            await VoiceConnection.PlayAudio(item.AudioSource, cancellationToken: combinedTokenSource.Token);
+                        }
+                        finally
+                        {
+                            _internalMusicQueue.TryDequeue(out var _);
+                            if (!_internalMusicQueue.Any())
+                            {
+                                OnQueueEmpty?.Invoke(this, EventArgs.Empty);
+                            }
+                        }
+                    }
+                    await Task.Delay(100, _cancellationTokenSource.Token);
+                }
+                catch (TaskCanceledException)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex);
+                }
+            }
         }
 
         public void Dispose()
@@ -128,37 +169,25 @@ namespace Driscod.Tracking.Voice
         {
             if (disposing)
             {
+                // do not send any events while disposing
                 OnAudioAdded = null;
                 OnAudioPlay = null;
                 OnQueueEmpty = null;
-                _internalMusicQueue.Clear();
+
+                _cancellationTokenSource.Cancel();
                 _playingCancellationTokenSource.Cancel();
-                _audioPlayTask?.Wait();
+                _handleQueueTask.Wait();
+
+                _cancellationTokenSource.Dispose();
+                _cancellationTokenSource = null;
+                _playingCancellationTokenSource.Dispose();
                 _playingCancellationTokenSource = null;
+
+                _internalMusicQueue.Clear();
                 _internalMusicQueue = null;
                 Guild.VoiceConnection?.Dispose();
                 Bot = null;
                 _disposed = true;
-            }
-        }
-
-        private void PlayNext()
-        {
-            if (_internalMusicQueue.TryPeek(out var item))
-            {
-                _audioPlayTask = VoiceConnection.PlayAudio(item.AudioSource, cancellationToken: _playingCancellationTokenSource.Token)
-                    .ContinueWith(_ =>
-                    {
-                        if (_internalMusicQueue.TryDequeue(out var _) && _internalMusicQueue.Any())
-                        {
-                            PlayNext();
-                        }
-                        else
-                        {
-                            OnQueueEmpty?.Invoke(this, EventArgs.Empty);
-                        }
-                    });
-                OnAudioPlay?.Invoke(this, item);
             }
         }
 
