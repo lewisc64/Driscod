@@ -20,6 +20,7 @@ public enum Intents
     DirectMessages = 1 << 12,
     DirectMessageReactions = 1 << 13,
     DirectMessageTyping = 1 << 14,
+    MessageContent = 1 << 15,
 
     All = Guilds
         | GuildMembers
@@ -35,5 +36,6 @@ public enum Intents
         | GuildMessageTyping
         | DirectMessages
         | DirectMessageReactions
-        | DirectMessageTyping,
+        | DirectMessageTyping
+        | MessageContent,
 }
