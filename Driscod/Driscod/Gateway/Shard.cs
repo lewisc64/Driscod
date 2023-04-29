@@ -12,39 +12,10 @@ namespace Driscod.Gateway
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
         private readonly string _token;
-
         private readonly int _shardNumber;
-
         private readonly int _totalShards;
-
         private readonly int _intents;
-
-        private JObject Identity => new JObject
-        {
-            { "token", _token },
-            { "shard", JToken.FromObject(new[] { _shardNumber, _totalShards })},
-            {
-                "properties", new JObject
-                {
-                    { "$os", Environment.OSVersion.VersionString },
-                    { "$browser", "c#" },
-                    { "$device", "c#" },
-                    { "$referrer", "" },
-                    { "$referring_domain", "" },
-                }
-            },
-            { "intents", _intents },
-        };
-
-        private string SessionId { get; set; }
-
-        protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4010, 4011, 4012, 4013, 4014 };
-
-        public bool Ready { get; private set; }
-
-        public string BotName { get; set; } = "Unnamed";
-
-        public override string Name => $"{BotName}-{_shardNumber}";
+        private string? _sessionId;
 
         public Shard(string token, int shardNumber, int totalShards, int intents)
             : base(Connectivity.WebSocketEndpoint)
@@ -56,14 +27,14 @@ namespace Driscod.Gateway
 
             AddListener<JObject>((int)MessageType.Hello, async data =>
             {
-                HeartbeatIntervalMilliseconds = data["heartbeat_interval"].ToObject<int>();
+                HeartbeatIntervalMilliseconds = data?["heartbeat_interval"]?.ToObject<int>() ?? throw new InvalidOperationException("Did not receive a heartbeat interval in the hello event.");
 
                 if (KeepSocketOpen)
                 {
                     await Send((int)MessageType.Resume, new JObject
                     {
                         { "token", _token },
-                        { "session_id", SessionId },
+                        { "session_id", _sessionId },
                         { "seq", Sequence },
                     });
                 }
@@ -83,7 +54,7 @@ namespace Driscod.Gateway
                     Logger.Info($"[{Name}] Ready.");
                 }
                 Ready = true;
-                SessionId = data["session_id"].ToObject<string>();
+                _sessionId = data?["session_id"]?.ToObject<string>() ?? throw new InvalidOperationException("Did not receive a session ID in the ready event.");
             });
 
             AddListener<object>((int)MessageType.InvalidSession, async _ =>
@@ -92,6 +63,31 @@ namespace Driscod.Gateway
                 await Restart();
             });
         }
+
+        private JObject Identity => new JObject
+        {
+            { "token", _token },
+            { "shard", JToken.FromObject(new[] { _shardNumber, _totalShards })},
+            {
+                "properties", new JObject
+                {
+                    { "$os", Environment.OSVersion.VersionString },
+                    { "$browser", "c#" },
+                    { "$device", "c#" },
+                    { "$referrer", "" },
+                    { "$referring_domain", "" },
+                }
+            },
+            { "intents", _intents },
+        };
+
+        protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4010, 4011, 4012, 4013, 4014 };
+
+        public bool Ready { get; private set; }
+
+        public string BotName { get; set; } = "Unnamed";
+
+        public override string Name => $"{BotName}-{_shardNumber}";
 
         protected override async Task Heartbeat()
         {

@@ -5,7 +5,7 @@ namespace Driscod.Extensions
 {
     public static class HttpResponseHeadersExtensions
     {
-        public static string GetFirstValueOrNull(this HttpResponseHeaders headers, string key)
+        public static string? GetFirstValueOrNull(this HttpResponseHeaders headers, string key)
         {
             var header = headers.FirstOrDefault(x => x.Key == key);
             return header.Key == null ? null : header.Value.FirstOrDefault();

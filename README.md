@@ -5,11 +5,7 @@ C# Discord API wrapper.
 
 ## Examples
 
-### Approaches
-
-These two approaches are identical in function.
-
-#### Event Handlers
+### Event Handlers
 
 ```cs
 using Driscod.Tracking;
@@ -26,35 +22,6 @@ bot.OnMessage += async (_, message) =>
         await message.Channel.SendMessage("pong");
     }
 };
-```
-
-#### CommandBotWrapper
-
-```cs
-using Driscod.Tracking;
-
-...
-
-public class TestBotWrapper : CommandBotWrapper
-{
-    public TestBot(Bot bot)
-        : base(bot)
-    {
-    }
-
-    [Command("ping")]
-    public async Task Ping(Message message, string[] args)
-    {
-        await message.Channel.SendMessage("pong");
-    }
-}
-
-...
-
-var bot = new Bot(TOKEN, Intents.All);
-await bot.Start();
-
-var testBot = new TestBotWrapper(bot);
 ```
 
 ### Play Music

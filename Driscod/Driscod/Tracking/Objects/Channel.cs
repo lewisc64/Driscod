@@ -1,6 +1,4 @@
-﻿using Driscod.Gateway;
-using Driscod.Gateway.Consts;
-using Driscod.Network;
+﻿using Driscod.Network;
 using Driscod.Tracking.Voice;
 using Newtonsoft.Json.Linq;
 using System;
@@ -22,31 +20,30 @@ namespace Driscod.Tracking.Objects
     public class Channel : DiscordObject, IMessageable, IMentionable
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
-
         private static readonly ChannelType[] UnmessagableChannelTypes = new[] { ChannelType.Category };
 
-        private string _guildId;
+        private string? _guildId;
 
-        public Guild Guild => Bot.GetObject<Guild>(_guildId);
+        public Guild? Guild => _guildId is null ? null : Bot.GetObject<Guild>(_guildId);
 
         public bool IsDm => ChannelType == ChannelType.User;
 
         public ChannelType ChannelType { get; private set; }
 
-        public string Topic { get; private set; }
+        public string? Topic { get; private set; }
 
         public int Position { get; private set; }
 
-        public JToken PermissionOverwrites { get; private set; } // TODO
+        public JToken? PermissionOverwrites { get; private set; } // TODO
 
-        public string Name { get; private set; }
+        public string? Name { get; private set; }
 
         public int Bitrate { get; private set; }
 
         public async IAsyncEnumerable<Message> GetMessages()
         {
-            string before = null;
-            JArray messages = null;
+            string? before = null;
+            JArray? messages = null;
 
             while (messages == null || messages.Any())
             {
@@ -54,17 +51,16 @@ namespace Driscod.Tracking.Objects
                     HttpMethod.Get,
                     Connectivity.ChannelMessagesPathFormat,
                     new[] { Id },
-                    queryParams: new Dictionary<string, string>() { { "before", before } });
+                    queryParams: before is null ? null : new Dictionary<string, string>() { { "before", before } });
+
+                if (messages is null)
+                {
+                    throw new InvalidOperationException("Received invalid messages response.");
+                }
 
                 foreach (var doc in messages)
                 {
-                    var message = new Message
-                    {
-                        DiscoveredOnShard = DiscoveredOnShard,
-                        Bot = Bot,
-                    };
-                    message.UpdateFromDocument(doc.ToObject<JObject>());
-
+                    var message = Create<Message>(Bot, doc!.ToObject<JObject>()!, DiscoveredOnShard);
                     yield return message;
                     before = message.Id;
                 }
@@ -81,7 +77,7 @@ namespace Driscod.Tracking.Objects
             await SendMessage(null, attachments: new[] { file });
         }
 
-        public async Task SendMessage(string message, MessageEmbed embed = null, IEnumerable<IMessageAttachment> attachments = null)
+        public async Task SendMessage(string? message, MessageEmbed? embed = null, IEnumerable<IMessageAttachment>? attachments = null)
         {
             if (message == null && embed == null && attachments == null)
             {
@@ -120,6 +116,10 @@ namespace Driscod.Tracking.Objects
 
         public async Task<VoiceConnection> ConnectVoice()
         {
+            if (Guild is null)
+            {
+                throw new InvalidOperationException("Cannot connect voice to a channel that isn't in a guild.");
+            }
             return await Guild.ConnectVoice(this);
         }
 
@@ -134,16 +134,16 @@ namespace Driscod.Tracking.Objects
 
         internal override void UpdateFromDocument(JObject doc)
         {
-            Id = doc["id"].ToObject<string>();
+            Id = doc!["id"]!.ToObject<string>()!;
 
             if (doc.ContainsKey("guild_id"))
             {
-                _guildId = doc["guild_id"].ToObject<string>();
+                _guildId = doc!["guild_id"]!.ToObject<string>()!;
             }
 
             if (doc.ContainsKey("type"))
             {
-                switch (doc["type"].ToObject<int>())
+                switch (doc!["type"]!.ToObject<int>())
                 {
                     case 0:
                         ChannelType = ChannelType.Text; break;
@@ -161,12 +161,12 @@ namespace Driscod.Tracking.Objects
 
             if (doc.ContainsKey("topic"))
             {
-                Topic = doc["topic"].ToObject<string>();
+                Topic = doc["topic"]!.ToObject<string>();
             }
 
             if (doc.ContainsKey("position"))
             {
-                Position = doc["position"].ToObject<int>();
+                Position = doc["position"]!.ToObject<int>();
             }
 
             if (doc.ContainsKey("permission_overwrites"))
@@ -176,12 +176,12 @@ namespace Driscod.Tracking.Objects
 
             if (doc.ContainsKey("name"))
             {
-                Name = doc["name"].ToObject<string>();
+                Name = doc["name"]!.ToObject<string>();
             }
 
             if (doc.ContainsKey("bitrate"))
             {
-                Bitrate = doc["bitrate"].ToObject<int>();
+                Bitrate = doc["bitrate"]!.ToObject<int>();
             }
         }
     }

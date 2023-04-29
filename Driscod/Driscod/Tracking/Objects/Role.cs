@@ -1,7 +1,6 @@
 ﻿using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace Driscod.Tracking.Objects
 {
@@ -11,7 +10,7 @@ namespace Driscod.Tracking.Objects
 
         public int Permissions { get; private set; }
 
-        public string Name { get; private set; }
+        public string Name { get; private set; } = null!;
 
         public bool Mentionable { get; private set; }
 
@@ -21,20 +20,20 @@ namespace Driscod.Tracking.Objects
 
         public int Color { get; private set; }
 
-        public Guild Guild => Bot.GetObjects<Guild>().FirstOrDefault(x => x.Roles.Any(y => y.Id == Id));
+        public Guild Guild => Bot.GetObjects<Guild>().First(x => x.Roles.Any(y => y.Id == Id));
 
         public IEnumerable<User> Users => Guild.Members.Where(x => x.Roles.Any(x => x.Id == Id)).Select(x => x.User);
 
         internal override void UpdateFromDocument(JObject doc)
         {
-            Id = doc["id"].ToObject<string>();
-            Position = doc["position"].ToObject<int>();
-            Permissions = doc["permissions"].ToObject<int>();
-            Name = doc["name"].ToObject<string>();
-            Mentionable = doc["mentionable"].ToObject<bool>();
-            Managed = doc["managed"].ToObject<bool>();
-            Hoist = doc["hoist"].ToObject<bool>();
-            Color = doc["color"].ToObject<int>();
+            Id = doc["id"]!.ToObject<string>()!;
+            Position = doc["position"]!.ToObject<int>();
+            Permissions = doc["permissions"]!.ToObject<int>();
+            Name = doc["name"]!.ToObject<string>()!;
+            Mentionable = doc["mentionable"]!.ToObject<bool>();
+            Managed = doc["managed"]!.ToObject<bool>();
+            Hoist = doc["hoist"]!.ToObject<bool>();
+            Color = doc["color"]!.ToObject<int>();
         }
     }
 }

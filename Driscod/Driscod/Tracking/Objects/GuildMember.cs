@@ -11,16 +11,16 @@ namespace Driscod.Tracking.Objects
     public class GuildMember : DiscordObject
     {
         private readonly List<string> _roleIds = new List<string>();
+        private string? _guildId;
+        private string? _userId;
 
-        private string _guildId;
+        public IEnumerable<Role> Roles => Bot.GetObject<Guild>(_guildId!)!.Roles.Where(x => _roleIds.Contains(x.Id));
 
-        private string _userId;
+        public User User => Bot.GetObject<User>(_userId!)!;
 
-        public IEnumerable<Role> Roles => Bot.GetObject<Guild>(_guildId).Roles.Where(x => _roleIds.Contains(x.Id));
+        public Guild Guild => Bot.GetObject<Guild>(_guildId!)!;
 
-        public User User => Bot.GetObject<User>(_userId);
-
-        public string Nickname { get; private set; }
+        public string? Nickname { get; private set; }
 
         public DateTime JoinedAt { get; private set; }
 
@@ -31,7 +31,7 @@ namespace Driscod.Tracking.Objects
                 throw new ArgumentException("Guild member already has that role", nameof(role));
             }
 
-            await Bot.SendJson(HttpMethod.Put, Connectivity.GuildMemberRolePathFormat, new[] { _guildId, _userId, role.Id });
+            await Bot.SendJson(HttpMethod.Put, Connectivity.GuildMemberRolePathFormat, new[] { _guildId!, _userId!, role.Id });
         }
 
         public async Task RemoveRole(Role role)
@@ -41,33 +41,33 @@ namespace Driscod.Tracking.Objects
                 throw new ArgumentException("Guild member does not have that role", nameof(role));
             }
 
-            await Bot.SendJson(HttpMethod.Delete, Connectivity.GuildMemberRolePathFormat, new[] { _guildId, _userId, role.Id });
+            await Bot.SendJson(HttpMethod.Delete, Connectivity.GuildMemberRolePathFormat, new[] { _guildId!, _userId!, role.Id });
         }
 
         internal override void UpdateFromDocument(JObject doc)
         {
-            _guildId = doc["guild_id"].ToObject<string>();
+            _guildId = doc["guild_id"]!.ToObject<string>()!;
 
-            _userId = doc["user"]["id"].ToObject<string>();
+            _userId = doc["user"]!["id"]!.ToObject<string>()!;
             Id = _userId;
 
             if (doc.ContainsKey("roles"))
             {
                 _roleIds.Clear();
-                _roleIds.AddRange(doc["roles"].Cast<JValue>().Select(x => x.ToObject<string>()));
+                _roleIds.AddRange(doc["roles"]!.Cast<JValue>().Select(x => x.ToObject<string>())!);
             }
 
             if (doc.ContainsKey("nick"))
             {
-                Nickname = doc["nick"].ToObject<string>();
+                Nickname = doc["nick"]!.ToObject<string>();
             }
 
             if (doc.ContainsKey("joined_at"))
             {
-                JoinedAt = doc["joined_at"].ToObject<DateTime>();
+                JoinedAt = doc["joined_at"]!.ToObject<DateTime>();
             }
 
-            Bot.CreateOrUpdateObject<User>(doc["user"].ToObject<JObject>());
+            Bot.CreateOrUpdateObject<User>(doc["user"]!.ToObject<JObject>()!, DiscoveredOnShard);
         }
     }
 }

@@ -12,16 +12,11 @@ namespace Driscod.Network.Udp
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
         private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
-
         private UdpClient _udpClient;
-
         private ConcurrentQueue<byte[]> _recievedPacketBuffer = new ConcurrentQueue<byte[]>();
-
         private bool _disposed = false;
 
-        private event EventHandler PacketRecievedEvent;
-
-        public bool ListenForPackets { get; set; } = false;
+        private event EventHandler? PacketRecievedEvent;
 
         public UdpSocket(string endpointAddress, int endpointPort)
             : this(new IPEndPoint(IPAddress.Parse(endpointAddress), endpointPort))
@@ -67,6 +62,8 @@ namespace Driscod.Network.Udp
                 }
             }).Start();
         }
+
+        public bool ListenForPackets { get; set; } = false;
 
         public byte[] GetNextPacket()
         {
@@ -146,12 +143,8 @@ namespace Driscod.Network.Udp
             {
                 _disposed = true;
                 _cancellationTokenSource.Cancel();
-
                 _udpClient.Dispose();
-                _udpClient = null;
-
                 _recievedPacketBuffer.Clear();
-                _recievedPacketBuffer = null;
             }
         }
 

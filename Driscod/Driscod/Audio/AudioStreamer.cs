@@ -23,6 +23,9 @@ namespace Driscod.Audio
         private readonly ConcurrentQueue<float[]> _rawPayloadQueue = new ConcurrentQueue<float[]>();
         private readonly CancellationToken _globalCancellationToken;
 
+        public event EventHandler? OnAudioStart;
+        public event EventHandler? OnAudioStop;
+
         public AudioStreamer(IAudioEncoder encoder, VoiceEndPointInfo endPointInfo, CancellationToken cancellationToken = default)
         {
             Encoder = encoder;
@@ -43,10 +46,6 @@ namespace Driscod.Audio
         public TimeSpan AudioBufferSize { get; set; } = TimeSpan.FromMinutes(1);
 
         public bool TransmittingAudio { get; private set; } = false;
-
-        public event EventHandler OnAudioStart;
-
-        public event EventHandler OnAudioStop;
 
         public async Task SendAudio(Stream sampleStream, CancellationToken cancellationToken = default)
         {
@@ -175,7 +174,7 @@ namespace Driscod.Audio
 
         private byte[] GetNextPacket(ushort sequence, uint timestamp)
         {
-            if (_rawPayloadQueue.TryDequeue(out float[] payload))
+            if (_rawPayloadQueue.TryDequeue(out float[]? payload))
             {
                 if (!TransmittingAudio)
                 {

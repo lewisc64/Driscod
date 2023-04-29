@@ -16,19 +16,19 @@ namespace Driscod.Tracking.Voice
 
         private string _channelId;
         private bool _disposed = false;
-        private CancellationTokenSource _cancellationTokenSource = new();
+        private readonly CancellationTokenSource _cancellationTokenSource = new();
         private CancellationTokenSource _playingCancellationTokenSource = new();
-        private ConcurrentQueue<MusicQueueItem> _internalMusicQueue = new ConcurrentQueue<MusicQueueItem>();
+        private readonly ConcurrentQueue<MusicQueueItem> _internalMusicQueue = new ConcurrentQueue<MusicQueueItem>();
         private readonly Task _handleQueueTask;
 
-        public event EventHandler<MusicQueueItem> OnAudioAdded;
-        public event EventHandler<MusicQueueItem> OnAudioPlay;
-        public event EventHandler OnQueueEmpty;
+        public event EventHandler<MusicQueueItem>? OnAudioAdded;
+        public event EventHandler<MusicQueueItem>? OnAudioPlay;
+        public event EventHandler? OnQueueEmpty;
 
         public VoiceChannelAudioQueue(Channel channel)
         {
             Bot = channel.Bot;
-            Channel = channel;
+            _channelId = channel.Id;
 
             _handleQueueTask = HandleQueue();
         }
@@ -44,18 +44,18 @@ namespace Driscod.Tracking.Voice
                     Channel.ConnectVoice().Wait();
                 }
 
-                return Guild.VoiceConnection;
+                return Guild.VoiceConnection!;
             }
         }
 
-        private Guild Guild => Channel.Guild;
+        private Guild Guild => Channel.Guild ?? throw new InvalidOperationException("The channel is not part of a guild.");
 
         public Channel Channel
         {
             get
             {
                 ThrowIfDisposed();
-                return Bot.GetObject<Channel>(_channelId);
+                return Bot.GetObject<Channel>(_channelId)!;
             }
 
             set
@@ -183,14 +183,10 @@ namespace Driscod.Tracking.Voice
                 _handleQueueTask.Wait();
 
                 _cancellationTokenSource.Dispose();
-                _cancellationTokenSource = null;
                 _playingCancellationTokenSource.Dispose();
-                _playingCancellationTokenSource = null;
 
                 _internalMusicQueue.Clear();
-                _internalMusicQueue = null;
                 Guild.VoiceConnection?.Dispose();
-                Bot = null;
                 _disposed = true;
             }
         }

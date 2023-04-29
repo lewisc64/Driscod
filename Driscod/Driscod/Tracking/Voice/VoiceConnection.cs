@@ -15,30 +15,28 @@ namespace Driscod.Tracking.Voice
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
         private readonly string _channelId;
-        private VoiceGateway _voiceGateway = null;
+        private readonly IBot _bot;
+        private VoiceGateway? _voiceGateway = null;
+        private AudioStreamer? _audioStreamer = null;
 
-        public EventHandler OnPlayAudio { get; set; }
-        public EventHandler OnStopAudio { get; set; }
+        public EventHandler? OnPlayAudio { get; set; }
+        public EventHandler? OnStopAudio { get; set; }
 
         internal VoiceConnection(Channel channel)
         {
             _channelId = channel.Id;
-            Bot = channel.Bot;
+            _bot = channel.Bot;
         }
 
-        private IBot Bot { get; set; }
-
-        private AudioStreamer AudioStreamer { get; set; }
-
-        public bool Playing => AudioStreamer.TransmittingAudio;
+        public bool Playing => _audioStreamer?.TransmittingAudio ?? false;
 
         public bool Connected { get; private set; } = false;
 
         public bool Stale => !(_voiceGateway?.Running ?? true);
 
-        public Channel Channel => Bot.GetObject<Channel>(_channelId);
+        public Channel Channel => _bot.GetObject<Channel>(_channelId) ?? throw new InvalidOperationException("The channel no longer exists.");
 
-        public Guild Guild => Channel?.Guild;
+        public Guild Guild => Channel.Guild ?? throw new InvalidOperationException("The channel is not part of a guild.");
 
         public async Task Connect()
         {
@@ -47,12 +45,12 @@ namespace Driscod.Tracking.Voice
                 throw new InvalidOperationException("Already connected.");
             }
             await CreateVoiceGateway();
-            AudioStreamer = _voiceGateway.CreateAudioStreamer();
-            AudioStreamer.OnAudioStart += (a, b) =>
+            _audioStreamer = _voiceGateway!.CreateAudioStreamer();
+            _audioStreamer.OnAudioStart += (a, b) =>
             {
                 OnPlayAudio?.Invoke(this, EventArgs.Empty);
             };
-            AudioStreamer.OnAudioStop += (a, b) =>
+            _audioStreamer.OnAudioStop += (a, b) =>
             {
                 OnStopAudio?.Invoke(this, EventArgs.Empty);
             };
@@ -63,7 +61,7 @@ namespace Driscod.Tracking.Voice
         {
             ThrowIfNotConnected();
 
-            await _voiceGateway.Stop();
+            await _voiceGateway!.Stop();
             Connected = false;
         }
 
@@ -79,7 +77,7 @@ namespace Driscod.Tracking.Voice
                 tcs.TrySetResult(true);
             };
 
-            AudioStreamer.OnAudioStop += handler;
+            _audioStreamer!.OnAudioStop += handler;
 
             var inControl = false;
 
@@ -89,18 +87,18 @@ namespace Driscod.Tracking.Voice
                 {
                     if (inControl)
                     {
-                        AudioStreamer.ClearAudio();
+                        _audioStreamer.ClearAudio();
                     }
                 });
                 inControl = true;
-                await AudioStreamer.SendAudio(audioSource, cancellationToken: cancellationToken);
-                await AudioStreamer.QueueSilence();
+                await _audioStreamer.SendAudio(audioSource, cancellationToken: cancellationToken);
+                await _audioStreamer.QueueSilence();
                 await tcs.Task;
             }
             finally
             {
                 inControl = false;
-                AudioStreamer.OnAudioStop -= handler;
+                _audioStreamer.OnAudioStop -= handler;
             }
         }
 
@@ -127,7 +125,7 @@ namespace Driscod.Tracking.Voice
                 {
                     await Channel.DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new JObject
                     {
-                        { "guild_id", Channel.Guild.Id },
+                        { "guild_id", Channel.Guild!.Id },
                         { "channel_id", Channel.Id },
                         { "self_mute", false },
                         { "self_deaf", false },
@@ -135,8 +133,8 @@ namespace Driscod.Tracking.Voice
                 }
             };
 
-            JObject stateData = null;
-            JObject serverData = null;
+            JObject? stateData = null;
+            JObject? serverData = null;
 
             try
             {
@@ -149,7 +147,7 @@ namespace Driscod.Tracking.Voice
                             listenerCreateCallback: sendAction,
                             validator: data =>
                             {
-                                return data["guild_id"].ToObject<string>() == Guild.Id && data["channel_id"].ToObject<string>() == Channel.Id && data["user_id"].ToObject<string>() == Bot.User.Id;
+                                return data!["guild_id"]?.ToObject<string>() == Guild.Id && data["channel_id"]?.ToObject<string>() == Channel.Id && data["user_id"]?.ToObject<string>() == _bot.User.Id;
                             },
                             timeout: TimeSpan.FromSeconds(10));
                     }),
@@ -161,7 +159,7 @@ namespace Driscod.Tracking.Voice
                             listenerCreateCallback: sendAction,
                             validator: data =>
                             {
-                                return data["guild_id"].ToObject<string>() == Guild.Id;
+                                return data!["guild_id"]?.ToObject<string>() == Guild.Id;
                             },
                             timeout: TimeSpan.FromSeconds(10));
                     })).Wait(TimeSpan.FromSeconds(10));
@@ -173,10 +171,10 @@ namespace Driscod.Tracking.Voice
 
             _voiceGateway = new VoiceGateway(
                     Channel.DiscoveredOnShard,
-                    Connectivity.FormatVoiceSocketEndpoint(serverData["endpoint"].ToObject<string>()),
+                    Connectivity.FormatVoiceSocketEndpoint(serverData?["endpoint"]?.ToObject<string>() ?? throw new InvalidOperationException("Failed to get voice socket endpoint.")),
                     Guild.Id,
-                    Bot.User.Id,
-                    (stateData?["session_id"]?.ToObject<string>() ?? null) ?? throw new InvalidOperationException("Failed to get session ID."),
+                    _bot.User.Id,
+                    (stateData?["session_id"]?.ToObject<string>()) ?? throw new InvalidOperationException("Failed to get session ID."),
                     serverData?["token"]?.ToObject<string>() ?? throw new InvalidOperationException("Failed to get token."));
 
             await _voiceGateway.Start();

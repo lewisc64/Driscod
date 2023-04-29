@@ -1,4 +1,5 @@
 ﻿using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -8,17 +9,22 @@ namespace Driscod.Tracking.Objects
 {
     public class User : DiscordObject, IMessageable, IMentionable
     {
+        public IEnumerable<GuildMember> GuildMemberships => Bot.Guilds
+            .Select(x => x.Members.FirstOrDefault(x => x.User == this))
+            .Where(x => x is not null)
+            .Cast<GuildMember>();
+
         public IEnumerable<Presence> Presences => Bot.Guilds
             .Where(x => x.Members.Select(x => x.User).Contains(this))
-            .Select(x => x.Presences.FirstOrDefault(x => x.User == this));
+            .Select(x => x.Presences.FirstOrDefault(x => x.User == this))
+            .Where(x => x is not null)
+            .Cast<Presence>();
 
-        public Presence Presence => Presences.FirstOrDefault();
+        public string? Username { get; private set; }
 
-        public string Username { get; private set; }
+        public string? Discriminator { get; private set; }
 
-        public string Discriminator { get; private set; }
-
-        public string Avatar { get; private set; }
+        public string? Avatar { get; private set; }
 
         public bool IsBot { get; private set; }
 
@@ -26,8 +32,13 @@ namespace Driscod.Tracking.Objects
         {
             var result = await Bot.SendJson(HttpMethod.Post, @"users/{0}/channels", new[] { Bot.User.Id }, new JObject { { "recipient_id", Id } });
 
-            Bot.CreateOrUpdateObject<Channel>(result);
-            return Bot.GetObject<Channel>(result["id"].ToObject<string>());
+            if (result is null)
+            {
+                throw new InvalidOperationException("Null response from DM channel fetch.");
+            }
+
+            Bot.CreateOrUpdateObject<Channel>(result, DiscoveredOnShard);
+            return Bot.GetObject<Channel>(result["id"]!.ToObject<string>()!)!;
         }
 
         public async Task SendMessage(MessageEmbed embed)
@@ -40,7 +51,7 @@ namespace Driscod.Tracking.Objects
             await SendMessage(null, attachments: new[] { file });
         }
 
-        public async Task SendMessage(string message, MessageEmbed embed = null, IEnumerable<IMessageAttachment> attachments = null)
+        public async Task SendMessage(string? message, MessageEmbed? embed = null, IEnumerable<IMessageAttachment>? attachments = null)
         {
             await (await GetDmChannel()).SendMessage(message, embed: embed, attachments: attachments);
         }
@@ -57,11 +68,11 @@ namespace Driscod.Tracking.Objects
 
         internal override void UpdateFromDocument(JObject doc)
         {
-            Id = doc["id"].ToObject<string>();
-            Username = doc["username"].ToObject<string>();
-            Discriminator = doc["discriminator"].ToObject<string>();
-            Avatar = doc.ContainsKey("avatar") ? doc["avatar"].ToObject<string>() : null;
-            IsBot = doc.ContainsKey("bot") && doc["bot"].ToObject<bool>();
+            Id = doc["id"]!.ToObject<string>()!;
+            Username = doc["username"]!.ToObject<string>();
+            Discriminator = doc["discriminator"]!.ToObject<string>();
+            Avatar = doc.ContainsKey("avatar") ? doc["avatar"]!.ToObject<string>() : null;
+            IsBot = doc.ContainsKey("bot") && doc["bot"]!.ToObject<bool>();
         }
     }
 }

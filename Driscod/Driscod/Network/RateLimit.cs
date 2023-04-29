@@ -47,7 +47,7 @@ namespace Driscod.Network
 
             try
             {
-                HttpResponseMessage response = null;
+                HttpResponseMessage? response = null;
                 int retryAfter = -1;
                 do
                 {

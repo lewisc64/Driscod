@@ -9,6 +9,6 @@ namespace Driscod.Tracking.Objects
 
         Task SendMessage(IMessageAttachment file);
 
-        Task SendMessage(string message, MessageEmbed embed = null, IEnumerable<IMessageAttachment> attachments = null);
+        Task SendMessage(string? message, MessageEmbed? embed = null, IEnumerable<IMessageAttachment>? attachments = null);
     }
 }

@@ -5,26 +5,26 @@ namespace Driscod.Tracking.Objects
 {
     public interface IDiscordObject
     {
-        string Id { get; set; }
+        string Id { get; }
 
-        IBot Bot { get; set; }
+        IBot Bot { get; }
     }
 
     public abstract class DiscordObject : IDiscordObject
     {
-        public string Id { get; set; }
-
-        public IBot Bot { get; set; }
-
-        internal Shard DiscoveredOnShard { get; set; }
-
         protected DiscordObject()
         {
         }
 
+        public string Id { get; protected set; } = null!;
+
+        public IBot Bot { get; private set; } = null!;
+
+        internal Shard DiscoveredOnShard { get; private set; } = null!;
+
         internal abstract void UpdateFromDocument(JObject doc);
 
-        internal static T Create<T>(IBot bot, JObject doc, Shard discoveredBy = null)
+        internal static T Create<T>(IBot bot, JObject doc, Shard discoveredBy)
             where T : DiscordObject, new()
         {
             var obj = new T();

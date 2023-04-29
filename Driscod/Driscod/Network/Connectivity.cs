@@ -30,7 +30,7 @@ namespace Driscod.Network
                 var responseContent = client.GetAsync($"{HttpApiEndpoint}/gateway").Result.Content.ReadAsStringAsync().Result;
                 var doc = JObject.Parse(responseContent);
 
-                return doc["url"].ToObject<string>();
+                return doc["url"]!.ToObject<string>()!;
             }
         }
 

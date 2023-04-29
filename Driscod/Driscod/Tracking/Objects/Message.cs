@@ -1,6 +1,7 @@
 ﻿using Driscod.Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -11,51 +12,54 @@ namespace Driscod.Tracking.Objects
     // TODO: the rest of the attributes
     public class Message : DiscordObject, IUntracked
     {
-        private string _authorId;
+        private string? _authorId;
+        private string? _channelId;
+        private string? _content;
+        private List<Reaction>? _reactions;
 
-        private string _channelId;
+        public User Author => Bot.GetObject<User>(_authorId!)!;
 
-        private string _content;
+        public Channel Channel => Bot.GetObject<Channel>(_channelId!)!;
 
-        private List<Reaction> _reactions;
+        public string Content => _content!;
 
-        public User Author => Bot.GetObject<User>(_authorId);
+        public IEnumerable<MessageEmbed> Embeds { get; set; } = null!;
 
-        public Channel Channel => Bot.GetObject<Channel>(_channelId);
-
-        public string Content => _content;
-
-        public IEnumerable<MessageEmbed> Embeds { get; set; }
-
-        public IEnumerable<Reaction> Reactions => _reactions;
+        public IEnumerable<Reaction> Reactions => _reactions!;
 
         public IEnumerable<Reaction> MyReactions => Reactions.Where(x => x.BotUserReacted);
 
         public async Task Edit(string newContent)
         {
-            UpdateFromDocument(
-                await Bot.SendJson(
-                    HttpMethod.Patch,
-                    Connectivity.ChannelMessagePathFormat,
-                    new[]
-                    {
-                        Channel.Id,
-                        Id
-                    },
-                    new JObject
-                    {
-                        { "content", _content },
-                    }));
+            var responseDoc = await Bot.SendJson(
+                HttpMethod.Patch,
+                Connectivity.ChannelMessagePathFormat,
+                new[]
+                {
+                    Channel.Id,
+                    Id
+                },
+                new JObject
+                {
+                    { "content", _content },
+                });
+
+            if (responseDoc is null)
+            {
+                throw new InvalidOperationException("Null response from edit message request.");
+            }
+
+            UpdateFromDocument(responseDoc);
 
             _content = newContent;
         }
 
-        public async Task<Message> GetPreviousMessage()
+        public async Task<Message?> GetPreviousMessage()
         {
             return await GetRelativeMessage("before");
         }
 
-        public async Task<Message> GetNextMessage()
+        public async Task<Message?> GetNextMessage()
         {
             return await GetRelativeMessage("after");
         }
@@ -67,30 +71,25 @@ namespace Driscod.Tracking.Objects
 
         internal override void UpdateFromDocument(JObject doc)
         {
-            Id = doc["id"].ToObject<string>();
-            _authorId = doc["author"]["id"].ToObject<string>();
-            _channelId = doc["channel_id"].ToObject<string>();
-            _content = doc["content"].ToObject<string>();
+            Id = doc["id"]!.ToObject<string>()!;
+            _authorId = doc["author"]!["id"]!.ToObject<string>()!;
+            _channelId = doc["channel_id"]!.ToObject<string>()!;
+            _content = doc["content"]!.ToObject<string>()!;
 
             if (doc.ContainsKey("reactions"))
             {
                 _reactions = new List<Reaction>();
-                foreach (var reactionDoc in doc["reactions"].ToArray())
+                foreach (var reactionDoc in doc["reactions"]!.ToArray())
                 {
-                    var reaction = new Reaction
-                    {
-                        DiscoveredOnShard = DiscoveredOnShard,
-                        Bot = Bot,
-                    };
-                    reaction.UpdateFromDocument(reactionDoc.ToObject<JObject>());
+                    var reaction = Create<Reaction>(Bot, doc, DiscoveredOnShard);
                     _reactions.Add(reaction);
                 }
             }
 
-            Embeds = doc["embeds"].Select(x => x.ToObject<MessageEmbed>());
+            Embeds = doc["embeds"]!.Select(x => x.ToObject<MessageEmbed>()!);
         }
 
-        private async Task<Message> GetRelativeMessage(string paramName)
+        private async Task<Message?> GetRelativeMessage(string paramName)
         {
             var doc = (await Bot.SendJson<JArray>(
                 HttpMethod.Get,
@@ -105,7 +104,7 @@ namespace Driscod.Tracking.Objects
                     { "limit", "1" }
                 }))
                 ?.ToObject<JObject[]>()
-                .FirstOrDefault();
+                ?.FirstOrDefault();
 
             if (doc == null)
             {
@@ -129,7 +128,7 @@ namespace Driscod.Tracking.Objects
         };
 
         [JsonProperty("type")]
-        private string _typeName;
+        private string? _typeName;
 
         [JsonIgnore]
         public ContentType Type
@@ -146,60 +145,60 @@ namespace Driscod.Tracking.Objects
         }
 
         [JsonProperty("title")]
-        public string Title { get; set; }
+        public string? Title { get; set; }
 
         [JsonProperty("description")]
-        public string Description { get; set; }
+        public string? Description { get; set; }
 
         [JsonProperty("url")]
-        public string Url { get; set; }
+        public string? Url { get; set; }
 
         [JsonProperty("timestamp")]
-        public string Timestamp { get; set; }
+        public string? Timestamp { get; set; }
 
         [JsonProperty("color")]
         public int Color { get; set; }
 
         [JsonProperty("footer")]
-        public FooterInfo Footer { get; set; }
+        public FooterInfo? Footer { get; set; }
 
         [JsonProperty("image")]
-        public ImageInfo Image { get; set; }
+        public ImageInfo? Image { get; set; }
 
         [JsonProperty("thumbnail")]
-        public ThumbnailInfo Thumbnail { get; set; }
+        public ThumbnailInfo? Thumbnail { get; set; }
 
         [JsonProperty("video")]
-        public VideoInfo Video { get; set; }
+        public VideoInfo? Video { get; set; }
 
         [JsonProperty("provider")]
-        public ProviderInfo Provider { get; set; }
+        public ProviderInfo? Provider { get; set; }
 
         [JsonProperty("author")]
-        public AuthorInfo Author { get; set; }
+        public AuthorInfo? Author { get; set; }
 
         [JsonProperty("fields")]
-        public IEnumerable<FieldInfo> Fields { get; set; }
+        public IEnumerable<FieldInfo>? Fields { get; set; }
 
         public class FooterInfo
         {
             [JsonProperty("text"), JsonRequired]
-            public string Text { get; set; }
+            public string? Text { get; set; }
 
             [JsonProperty("icon_url")]
-            public string IconUrl { get; set; }
+            public string? IconUrl { get; set; }
 
             [JsonProperty("proxy_icon_url")]
-            public string ProxyIconUrl { get; set; }
+            public string? ProxyIconUrl { get; set; }
         }
 
         public class ImageInfo
         {
             [JsonProperty("url")]
-            public string Url { get; set; }
+            public string? Url { get; set; }
 
             [JsonProperty("proxy_url")]
-            public string ProxyUrl { get; set; }
+            public string? ProxyUrl { get; set; }
 
             [JsonProperty("height")]
             public int Height { get; set; }
@@ -215,7 +214,7 @@ namespace Driscod.Tracking.Objects
         public class VideoInfo
         {
             [JsonProperty("url")]
-            public string Url { get; set; }
+            public string? Url { get; set; }
 
             [JsonProperty("height")]
             public int Height { get; set; }
@@ -227,34 +226,34 @@ namespace Driscod.Tracking.Objects
         public class ProviderInfo
         {
             [JsonProperty("name")]
-            public string Name { get; set; }
+            public string? Name { get; set; }
 
             [JsonProperty("url")]
-            public string Url { get; set; }
+            public string? Url { get; set; }
         }
 
         public class AuthorInfo
         {
             [JsonProperty("name")]
-            public string Name { get; set; }
+            public string? Name { get; set; }
 
             [JsonProperty("url")]
-            public string Url { get; set; }
+            public string? Url { get; set; }
 
             [JsonProperty("icon_url")]
-            public string IconUrl { get; set; }
+            public string? IconUrl { get; set; }
 
             [JsonProperty("proxy_icon_url")]
-            public string ProxyIconUrl { get; set; }
+            public string? ProxyIconUrl { get; set; }
         }
 
         public class FieldInfo
         {
             [JsonProperty("name"), JsonRequired]
-            public string Name { get; set; }
+            public string? Name { get; set; }
 
             [JsonProperty("value"), JsonRequired]
-            public string Value { get; set; }
+            public string? Value { get; set; }
 
             [JsonProperty("inline")]
             public bool Inline { get; set; }

@@ -15,31 +15,10 @@ namespace Driscod.Gateway
 
         public static bool DetailedLogging { get; set; } = false;
 
-        private readonly object _listenerLock = new object();
-
-        private List<DateTime> LimitTracker { get; set; } = new List<DateTime>();
-
-        private List<Task> Tasks { get; set; } = new List<Task>();
-
-        private List<Action<JObject>> Listeners { get; set; } = new List<Action<JObject>>();
-
-        protected int Sequence { get; set; }
-
-        protected WebSocket Socket { get; private set; }
-
-        protected bool KeepSocketOpen { get; set; }
-
-        protected virtual IEnumerable<int> RespectedCloseSocketCodes => new int[0];
-
-        protected virtual TimeSpan ReconnectDelay => TimeSpan.FromSeconds(1);
-
-        protected CancellationTokenSource CancellationTokenSource { get; set; }
-
-        protected int HeartbeatIntervalMilliseconds { get; set; }
-
-        public abstract string Name { get; }
-
-        public bool Running => Socket.State == WebSocketState.Open;
+        private readonly object _listenerLock = new();
+        private readonly List<DateTime> _limitTracker = new();
+        private readonly List<Task> _tasks = new();
+        private readonly List<Action<JObject>> _listeners = new();
 
         protected Gateway(string url)
         {
@@ -95,7 +74,7 @@ namespace Driscod.Gateway
 
                 lock (_listenerLock)
                 {
-                    foreach (var listener in Listeners)
+                    foreach (var listener in _listeners)
                     {
                         Task.Run(() =>
                         {
@@ -105,6 +84,24 @@ namespace Driscod.Gateway
                 }
             });
         }
+
+        protected int Sequence { get; set; }
+
+        protected WebSocket Socket { get; private set; }
+
+        protected bool KeepSocketOpen { get; set; }
+
+        protected virtual IEnumerable<int> RespectedCloseSocketCodes => new int[0];
+
+        protected virtual TimeSpan ReconnectDelay => TimeSpan.FromSeconds(1);
+
+        protected CancellationTokenSource CancellationTokenSource { get; set; } = new();
+
+        protected int HeartbeatIntervalMilliseconds { get; set; }
+
+        public abstract string Name { get; }
+
+        public bool Running => Socket.State == WebSocketState.Open;
 
         public virtual Task Start()
         {
@@ -136,7 +133,7 @@ namespace Driscod.Gateway
             {
                 Socket.Close("Internal stop call.");
             }
-            while (Socket.State != WebSocketState.Closed || Tasks.Any())
+            while (Socket.State != WebSocketState.Closed || _tasks.Any())
             {
                 await Task.Delay(200);
             }
@@ -148,25 +145,25 @@ namespace Driscod.Gateway
             await Start();
         }
 
-        public async Task<T> ListenForEvent<T>(int type, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
+        public async Task<T?> ListenForEvent<T>(int type, Action? listenerCreateCallback = null, Func<T?, bool>? validator = null, TimeSpan? timeout = null)
         {
             return await ListenForEvent(type, new string[0], listenerCreateCallback: listenerCreateCallback, validator: validator, timeout: timeout);
         }
 
-        public async Task<T> ListenForEvent<T>(int type, string eventName, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
+        public async Task<T?> ListenForEvent<T>(int type, string eventName, Action? listenerCreateCallback = null, Func<T?, bool>? validator = null, TimeSpan? timeout = null)
         {
             return await ListenForEvent(type, new[] { eventName }, listenerCreateCallback: listenerCreateCallback, validator: validator, timeout: timeout);
         }
 
-        public async Task<T> ListenForEvent<T>(int type, IEnumerable<string> eventNames, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)
+        public async Task<T?> ListenForEvent<T>(int type, IEnumerable<string> eventNames, Action? listenerCreateCallback = null, Func<T?, bool>? validator = null, TimeSpan? timeout = null)
         {
-            Action<JObject> handler = null;
+            Action<JObject>? handler = null;
             try
             {
                 var tcs = new TaskCompletionSource<bool>();
-                T result = default(T);
+                T? result = default(T);
 
-                handler = AddListener<T>(type, eventNames, data =>
+                handler = AddListener<T?>(type, eventNames, data =>
                 {
                     if (tcs.Task.IsCompleted)
                     {
@@ -212,39 +209,39 @@ namespace Driscod.Gateway
             }
         }
 
-        public Action<JObject> AddListener<T>(int type, Action<T> handler)
+        public Action<JObject?> AddListener<T>(int type, Action<T?> handler)
         {
             return AddListener(type, new string[0], handler);
         }
 
-        public Action<JObject> AddListener<T>(int type, string eventName, Action<T> handler)
+        public Action<JObject?> AddListener<T>(int type, string eventName, Action<T?> handler)
         {
             return AddListener(type, new[] { eventName }, handler);
         }
 
-        public Action<JObject> AddListener<T>(int type, IEnumerable<string> eventNames, Action<T> handler)
+        public Action<JObject?> AddListener<T>(int type, IEnumerable<string> eventNames, Action<T?> handler)
         {
             var handlerName = $"{type}{(eventNames.Any() ? $" ({string.Join(", ", eventNames)})" : string.Empty)}";
 
-            Action<JObject> listener = doc =>
+            Action<JObject?> listener = doc =>
             {
-                if (doc.ContainsKey("s") && doc["s"].Type != JTokenType.Null)
+                if (doc!.ContainsKey("s") && doc["s"]!.Type != JTokenType.Null)
                 {
-                    Sequence = doc["s"].ToObject<int>();
+                    Sequence = doc["s"]!.ToObject<int>();
                 }
-                if ((type == -1 || doc["op"].ToObject<int>() == type) && (!eventNames.Any() || eventNames.Contains(doc["t"].ToObject<string>())))
+                if ((type == -1 || doc["op"]!.ToObject<int>() == type) && (!eventNames.Any() || eventNames.Contains(doc["t"]!.ToObject<string>())))
                 {
                     Task.Run(() =>
                     {
                         try
                         {
-                            if (doc["d"].Type == JTokenType.Null)
+                            if (doc["d"]!.Type == JTokenType.Null)
                             {
                                 handler(default);
                             }
                             else
                             {
-                                handler(doc["d"].ToObject<T>());
+                                handler(doc["d"]!.ToObject<T?>());
                             }
                         }
                         catch (Exception e)
@@ -257,7 +254,7 @@ namespace Driscod.Gateway
 
             lock (_listenerLock)
             {
-                Listeners.Add(listener);
+                _listeners.Add(listener);
             }
 
             if (DetailedLogging)
@@ -272,11 +269,11 @@ namespace Driscod.Gateway
         {
             lock (_listenerLock)
             {
-                Listeners.Remove(handler);
+                _listeners.Remove(handler);
             }
         }
 
-        internal async Task Send<T>(int type, T data = default)
+        internal async Task Send<T>(int type, T? data = default)
         {
             var response = new JObject
             {
@@ -300,7 +297,7 @@ namespace Driscod.Gateway
         {
             if (!CancellationTokenSource.IsCancellationRequested)
             {
-                Tasks.Add(task);
+                _tasks.Add(task);
             }
             else
             {
@@ -376,11 +373,11 @@ namespace Driscod.Gateway
             {
                 do
                 {
-                    LimitTracker.RemoveAll(x => (DateTime.UtcNow - x).TotalSeconds > 60);
+                    _limitTracker.RemoveAll(x => (DateTime.UtcNow - x).TotalSeconds > 60);
                 }
-                while (LimitTracker.Count >= Connectivity.GatewayEventsPerMinute);
+                while (_limitTracker.Count >= Connectivity.GatewayEventsPerMinute);
 
-                LimitTracker.Add(DateTime.UtcNow);
+                _limitTracker.Add(DateTime.UtcNow);
             });
         }
 
@@ -400,7 +397,7 @@ namespace Driscod.Gateway
                 Logger.Warn($"[{Name}] Cancellation requested before task clear call.");
             }
 
-            foreach (var task in Tasks)
+            foreach (var task in _tasks)
             {
                 await Task.WhenAny(
                     task,
@@ -411,7 +408,7 @@ namespace Driscod.Gateway
                 }
             }
 
-            Tasks.Clear();
+            _tasks.Clear();
         }
     }
 }

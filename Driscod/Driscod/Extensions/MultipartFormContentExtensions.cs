@@ -8,7 +8,7 @@ namespace Driscod.Extensions
 {
     public static class MultipartFormDataContentExtensions
     {
-        public static MultipartFormDataContent AddJsonPayload(this MultipartFormDataContent content, string json)
+        public static MultipartFormDataContent AddJsonPayload(this MultipartFormDataContent content, string? json)
         {
             if (json != null)
             {

@@ -11,7 +11,7 @@ namespace Driscod.Audio
     {
         private readonly string _path;
 
-        public string Name => _path.Split('\\', '/').Last();
+        public string Name => _path.Split('\\', '/', StringSplitOptions.None).Last();
 
         public AudioFile(string path)
         {

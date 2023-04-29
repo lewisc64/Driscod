@@ -1,7 +1,4 @@
-﻿using Driscod.Gateway;
-using Driscod.Gateway.Consts;
-using Driscod.Network;
-using Driscod.Tracking.Voice;
+﻿using Driscod.Tracking.Voice;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -13,8 +10,6 @@ namespace Driscod.Tracking.Objects
 {
     public class Guild : DiscordObject
     {
-        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
-
         private readonly List<string> _emojiIds = new List<string>();
         private readonly List<string> _channelIds = new List<string>();
         private readonly List<string> _roleIds = new List<string>();
@@ -28,15 +23,24 @@ namespace Driscod.Tracking.Objects
 
         public IEnumerable<VoiceState> VoiceStates => _voiceStates.ToArray();
 
-        public IEnumerable<Emoji> Emojis => _emojiIds.Select(x => Bot.GetObject<Emoji>(x));
+        public IEnumerable<Emoji> Emojis => _emojiIds
+            .Select(x => Bot.GetObject<Emoji>(x))
+            .Where(x => x is not null)
+            .Cast<Emoji>();
 
         public IEnumerable<GuildMember> Members => _members.ToArray();
 
-        public IEnumerable<Channel> Channels => _channelIds.Select(x => Bot.GetObject<Channel>(x));
+        public IEnumerable<Channel> Channels => _channelIds
+            .Select(x => Bot.GetObject<Channel>(x))
+            .Where(x => x is not null)
+            .Cast<Channel>();
 
-        public IEnumerable<Role> Roles => _roleIds.Select(x => Bot.GetObject<Role>(x));
+        public IEnumerable<Role> Roles => _roleIds
+            .Select(x => Bot.GetObject<Role>(x))
+            .Where(x => x is not null)
+            .Cast<Role>();
 
-        public VoiceConnection VoiceConnection { get; set; }
+        public VoiceConnection? VoiceConnection { get; set; }
 
         public bool HasActiveVoiceConnection => VoiceConnection != null && !VoiceConnection.Stale;
 
@@ -44,21 +48,21 @@ namespace Driscod.Tracking.Objects
 
         public IEnumerable<Channel> VoiceChannels => Channels.Where(x => x.ChannelType == ChannelType.Voice).OrderBy(x => x.Position);
 
-        public string Name { get; private set; }
+        public string? Name { get; private set; }
 
-        public string VanityUrlCode { get; private set; }
+        public string? VanityUrlCode { get; private set; }
 
-        public string ApplicationId { get; private set; }
+        public string? ApplicationId { get; private set; }
 
         public int SystemChannelFlags { get; private set; }
 
         public bool Unavailable { get; private set; }
 
-        public string Icon { get; private set; }
+        public string? Icon { get; private set; }
 
         public int DefaultMessageNotifications { get; private set; }
 
-        public string DiscoverySplash { get; private set; }
+        public string? DiscoverySplash { get; private set; }
 
         public int PremiumSubscriptionCount { get; private set; }
 
@@ -93,7 +97,7 @@ namespace Driscod.Tracking.Objects
 
         internal void UpdatePresence(JObject doc)
         {
-            var presence = _presences.FirstOrDefault(x => x.User.Id == doc["user"]["id"].ToObject<string>());
+            var presence = _presences.FirstOrDefault(x => x.User.Id == (doc["user"]?["id"]?.ToObject<string>() ?? throw new ArgumentException($"The presence update document does not contain a user ID: {doc}")));
             if (presence == null)
             {
                 presence = Create<Presence>(Bot, doc, discoveredBy: DiscoveredOnShard);
@@ -107,7 +111,7 @@ namespace Driscod.Tracking.Objects
 
         internal void UpdateMember(JObject doc)
         {
-            var member = _members.FirstOrDefault(x => x.User.Id == doc["user"]["id"].ToObject<string>());
+            var member = _members.FirstOrDefault(x => x.User.Id == doc["user"]!["id"]!.ToObject<string>());
             if (member == null)
             {
                 member = Create<GuildMember>(Bot, doc, discoveredBy: DiscoveredOnShard);
@@ -127,16 +131,16 @@ namespace Driscod.Tracking.Objects
 
         internal void UpdateVoiceState(JObject doc)
         {
-            var userId = doc.ContainsKey("member") ? doc["member"]["user"]["id"].ToObject<string>() : doc["user_id"].ToObject<string>();
+            var userId = doc.ContainsKey("member") ? doc["member"]!["user"]!["id"]!.ToObject<string>() : doc["user_id"]!.ToObject<string>();
             var voiceState = VoiceStates.FirstOrDefault(x => x.User.Id == userId);
-            if (doc["channel_id"].Type == JTokenType.Null)
+            if (!doc.ContainsKey("channel_id") || doc["channel_id"]!.Type == JTokenType.Null)
             {
                 _voiceStates.RemoveAll(x => x.User.Id == userId);
                 return;
             }
             if (voiceState == null)
             {
-                _voiceStates.Add(Create<VoiceState>(Bot, doc));
+                _voiceStates.Add(Create<VoiceState>(Bot, doc, discoveredBy: DiscoveredOnShard));
             }
             else
             {
@@ -147,9 +151,9 @@ namespace Driscod.Tracking.Objects
         internal void UpdateChannel(JObject doc)
         {
             Bot.CreateOrUpdateObject<Channel>(doc, discoveredBy: DiscoveredOnShard);
-            if (!_channelIds.Contains(doc["id"].ToObject<string>()))
+            if (!_channelIds.Contains(doc["id"]!.ToObject<string>()!))
             {
-                _channelIds.Add(doc["id"].ToObject<string>());
+                _channelIds.Add(doc["id"]!.ToObject<string>()!);
             }
         }
 
@@ -162,9 +166,9 @@ namespace Driscod.Tracking.Objects
         internal void UpdateRole(JObject doc)
         {
             Bot.CreateOrUpdateObject<Role>(doc, discoveredBy: DiscoveredOnShard);
-            if (!_roleIds.Contains(doc["id"].ToObject<string>()))
+            if (!_roleIds.Contains(doc["id"]!.ToObject<string>()!))
             {
-                _roleIds.Add(doc["id"].ToObject<string>());
+                _roleIds.Add(doc["id"]!.ToObject<string>()!);
             }
         }
 
@@ -176,22 +180,22 @@ namespace Driscod.Tracking.Objects
 
         internal override void UpdateFromDocument(JObject doc)
         {
-            Id = doc["id"].ToObject<string>();
+            Id = doc["id"]!.ToObject<string>()!;
 
             if (doc.ContainsKey("name"))
             {
-                Name = doc["name"].ToObject<string>();
+                Name = doc["name"]!.ToObject<string>()!;
             }
 
             if (doc.ContainsKey("members"))
             {
                 var found = new List<string>();
-                foreach (var memberDoc in doc["members"].Cast<JObject>())
+                foreach (var memberDoc in doc["members"]!.Cast<JObject>())
                 {
                     memberDoc["guild_id"] = Id;
-                    found.Add(memberDoc["user"]["id"].ToObject<string>());
+                    found.Add(memberDoc["user"]!["id"]!.ToObject<string>()!);
                     UpdateMember(memberDoc);
-                    Bot.CreateOrUpdateObject<User>(memberDoc["user"].ToObject<JObject>(), discoveredBy: DiscoveredOnShard);
+                    Bot.CreateOrUpdateObject<User>(memberDoc["user"]!.ToObject<JObject>()!, discoveredBy: DiscoveredOnShard);
                 }
                 _members.RemoveAll(x => !found.Contains(x.User.Id));
             }
@@ -199,9 +203,9 @@ namespace Driscod.Tracking.Objects
             if (doc.ContainsKey("presences"))
             {
                 var found = new List<string>();
-                foreach (var presenceDoc in doc["presences"].Cast<JObject>())
+                foreach (var presenceDoc in doc["presences"]!.Cast<JObject>())
                 {
-                    found.Add(presenceDoc["user"]["id"].ToObject<string>());
+                    found.Add(presenceDoc["user"]!["id"]!.ToObject<string>()!);
                     UpdatePresence(presenceDoc);
                 }
                 _presences.RemoveAll(x => !found.Contains(x.User.Id));
@@ -210,17 +214,17 @@ namespace Driscod.Tracking.Objects
             if (doc.ContainsKey("emojis"))
             {
                 _emojiIds.Clear();
-                foreach (var emojiDoc in doc["emojis"].Cast<JObject>())
+                foreach (var emojiDoc in doc["emojis"]!.Cast<JObject>())
                 {
-                    Bot.CreateOrUpdateObject<Emoji>(emojiDoc);
-                    _emojiIds.Add(emojiDoc["id"].ToObject<string>());
+                    Bot.CreateOrUpdateObject<Emoji>(emojiDoc, DiscoveredOnShard);
+                    _emojiIds.Add(emojiDoc["id"]!.ToObject<string>()!);
                 }
             }
 
             if (doc.ContainsKey("channels"))
             {
                 _channelIds.Clear();
-                foreach (var channelDoc in doc["channels"].Cast<JObject>())
+                foreach (var channelDoc in doc["channels"]!.Cast<JObject>())
                 {
                     channelDoc["guild_id"] = Id;
                     UpdateChannel(channelDoc);
@@ -230,7 +234,7 @@ namespace Driscod.Tracking.Objects
             if (doc.ContainsKey("roles"))
             {
                 _roleIds.Clear();
-                foreach (var roleDoc in doc["roles"].Cast<JObject>())
+                foreach (var roleDoc in doc["roles"]!.Cast<JObject>())
                 {
                     UpdateRole(roleDoc);
                 }
@@ -238,12 +242,12 @@ namespace Driscod.Tracking.Objects
 
             if (doc.ContainsKey("vanity_url_code"))
             {
-                VanityUrlCode = doc.ContainsKey("vanity_url_code") ? doc["vanity_url_code"].ToObject<string>() : null;
+                VanityUrlCode = doc.ContainsKey("vanity_url_code") ? doc["vanity_url_code"]!.ToObject<string>() : null;
             }
 
             if (doc.ContainsKey("voice_states"))
             {
-                foreach (var voiceStateDoc in doc["voice_states"].Cast<JObject>())
+                foreach (var voiceStateDoc in doc["voice_states"]!.Cast<JObject>())
                 {
                     voiceStateDoc["guild_id"] = Id;
                     UpdateVoiceState(voiceStateDoc);
@@ -252,27 +256,27 @@ namespace Driscod.Tracking.Objects
 
             if (doc.ContainsKey("application_id"))
             {
-                ApplicationId = doc.ContainsKey("application_id") ? doc["application_id"].ToObject<string>() : null;
+                ApplicationId = doc.ContainsKey("application_id") ? doc["application_id"]!.ToObject<string>() : null;
             }
 
             if (doc.ContainsKey("system_channel_flags"))
             {
-                SystemChannelFlags = doc["system_channel_flags"].ToObject<int>();
+                SystemChannelFlags = doc["system_channel_flags"]!.ToObject<int>();
             }
 
             if (doc.ContainsKey("unavailable"))
             {
-                Unavailable = doc["unavailable"].ToObject<bool>();
+                Unavailable = doc["unavailable"]!.ToObject<bool>();
             }
 
             if (doc.ContainsKey("icon"))
             {
-                Icon = doc.ContainsKey("icon") ? doc["icon"].ToObject<string>() : null;
+                Icon = doc.ContainsKey("icon") ? doc["icon"]!.ToObject<string>() : null;
             }
 
             if (doc.ContainsKey("default_message_notifications"))
             {
-                DefaultMessageNotifications = doc["default_message_notifications"].ToObject<int>();
+                DefaultMessageNotifications = doc["default_message_notifications"]!.ToObject<int>();
             }
         }
     }

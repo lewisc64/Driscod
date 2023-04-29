@@ -29,7 +29,7 @@ namespace Driscod.Tracking
     {
         private readonly Stream _stream;
 
-        private byte[] _content;
+        private byte[]? _content;
 
         public string FileName { get; private set; }
 

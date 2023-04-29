@@ -1,7 +1,7 @@
 ﻿using System.IO;
 using System.Threading.Tasks;
 
-namespace Driscod.Audio
+namespace Driscod.Audio.AudioSource
 {
     public interface IAudioSource
     {

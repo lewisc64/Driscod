@@ -18,54 +18,23 @@ namespace Driscod.Gateway
     public class VoiceGateway : Gateway
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
-
         private static Random _random = new Random();
 
         private readonly string _serverId;
-
         private readonly string _userId;
-
         private readonly string _token;
+        private readonly Shard _parentShard;
 
-        private JObject Identity => new JObject
-        {
-            { "server_id", _serverId },
-            { "user_id", _userId },
-            { "session_id", SessionId },
-            { "token", _token },
-        };
+        private string? _udpSocketIpAddress;
+        private ushort? _udpSocketPort;
+        private IEnumerable<string>? _endpointEncryptionModes;
+        private string? _encryptionMode;
+        private uint _ssrc;
+        private byte[]? _secretKey;
+        private int _localPort;
+        private string? _externalAddress;
 
-        private string UdpSocketIpAddress { get; set; }
-
-        private ushort UdpSocketPort { get; set; }
-
-        private IEnumerable<string> EndpointEncryptionModes { get; set; }
-
-        private IEnumerable<string> AllowedEncryptionModes => EndpointEncryptionModes.Intersect(RtpPacketGenerator.SupportedEncryptionModes);
-
-        private string EncryptionMode { get; set; }
-
-        private uint Ssrc { get; set; }
-
-        private byte[] SecretKey { get; set; }
-
-        private int LocalPort { get; set; }
-
-        private string ExternalAddress { get; set; }
-
-        private Shard ParentShard { get; set; }
-
-        protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4006, 4014 }; // Should not reconnect upon forced disconnection.
-
-        public override string Name => $"VOICE-{SessionId}";
-
-        public bool Ready { get; private set; } = false;
-
-        public bool Speaking { get; private set; } = false;
-
-        public string SessionId { get; set; }
-
-        public event EventHandler OnStop;
+        public event EventHandler? OnStop;
 
         public VoiceGateway(Shard parentShard, string url, string serverId, string userId, string sessionId, string token)
             : base(url)
@@ -74,7 +43,7 @@ namespace Driscod.Gateway
             _userId = userId;
             _token = token;
 
-            ParentShard = parentShard;
+            _parentShard = parentShard;
             SessionId = sessionId;
 
             Socket.Opened += async (a, b) =>
@@ -97,28 +66,28 @@ namespace Driscod.Gateway
 
             AddListener<JObject>((int)MessageType.Hello, data =>
             {
-                HeartbeatIntervalMilliseconds = (int)data["heartbeat_interval"].ToObject<double>();
+                HeartbeatIntervalMilliseconds = (int)(data?["heartbeat_interval"]?.ToObject<double>() ?? throw new InvalidOperationException("Did not receive a heartbeat interval in the hello event."));
                 StartHeart();
                 KeepSocketOpen = true;
             });
 
             AddListener<JObject>((int)MessageType.Ready, async data =>
             {
-                UdpSocketIpAddress = data["ip"].ToObject<string>();
-                UdpSocketPort = data["port"].ToObject<ushort>();
-                EndpointEncryptionModes = data["modes"].ToObject<string[]>();
-                Ssrc = data["ssrc"].ToObject<uint>();
+                _udpSocketIpAddress = data?["ip"]?.ToObject<string>() ?? throw new InvalidOperationException("Did not receive the IP of the UDP socket in the ready event.");
+                _udpSocketPort = data?["port"]?.ToObject<ushort>() ?? throw new InvalidOperationException("Did not receive the port of the UDP socket in the ready event.");
+                _endpointEncryptionModes = data?["modes"]?.ToObject<string[]>() ?? throw new InvalidOperationException("Did not receive the encrpytion modes in the ready event.");
+                _ssrc = data?["ssrc"]?.ToObject<uint>() ?? throw new InvalidOperationException("Did not receive the SSRC in the ready event.");
 
-                if (!AllowedEncryptionModes.Any())
+                if (!AllowedEncryptionModes!.Any())
                 {
                     Logger.Fatal($"[{Name}] Found no allowed encryption modes.");
                     await Stop();
                     return;
                 }
 
-                EncryptionMode = AllowedEncryptionModes.First();
+                _encryptionMode = AllowedEncryptionModes!.First();
 
-                Logger.Debug($"[{Name}] Using encryption mode '{EncryptionMode}'.");
+                Logger.Debug($"[{Name}] Using encryption mode '{_encryptionMode}'.");
 
                 await FetchExternalAddress();
 
@@ -128,9 +97,9 @@ namespace Driscod.Gateway
                     { "data",
                         new JObject
                         {
-                            { "address", ExternalAddress },
-                            { "port", LocalPort },
-                            { "mode", EncryptionMode },
+                            { "address", _externalAddress },
+                            { "port", _localPort },
+                            { "mode", _encryptionMode },
                         }
                     },
                 });
@@ -138,15 +107,35 @@ namespace Driscod.Gateway
 
             AddListener<JObject>((int)MessageType.SessionDescription, data =>
             {
-                var codec = data["audio_codec"].ToObject<string>();
+                var codec = data?["audio_codec"]?.ToObject<string>() ?? throw new InvalidOperationException("Did not receive the audio codec in the session description message.");
                 if (codec != "opus")
                 {
                     Logger.Warn($"[{Name}] Voice gateway requested unsupported audio codec: '{codec}'.");
                 }
-                SecretKey = data["secret_key"].ToObject<byte[]>();
+                _secretKey = data?["secret_key"]?.ToObject<byte[]>() ?? throw new InvalidOperationException("Did not receive the secret key in the session description message.");
                 Ready = true;
             });
         }
+
+        private JObject Identity => new JObject
+        {
+            { "server_id", _serverId },
+            { "user_id", _userId },
+            { "session_id", SessionId },
+            { "token", _token },
+        };
+
+        private IEnumerable<string>? AllowedEncryptionModes => _endpointEncryptionModes?.Intersect(RtpPacketGenerator.SupportedEncryptionModes);
+
+        protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4006, 4014 }; // Should not reconnect upon forced disconnection.
+
+        public override string Name => $"VOICE-{SessionId}";
+
+        public bool Ready { get; private set; } = false;
+
+        public bool Speaking { get; private set; } = false;
+
+        public string SessionId { get; set; }
 
         public override async Task Start()
         {
@@ -165,7 +154,7 @@ namespace Driscod.Gateway
         {
             try
             {
-                await ParentShard.Send((int)Shard.MessageType.VoiceStateUpdate, new JObject
+                await _parentShard.Send((int)Shard.MessageType.VoiceStateUpdate, new JObject
                     {
                         { "guild_id", _serverId },
                         { "channel_id", null },
@@ -222,10 +211,10 @@ namespace Driscod.Gateway
             var endPointInfo = new VoiceEndPointInfo
             {
                 SocketEndPoint = GetUdpEndpoint(),
-                LocalPort = LocalPort,
-                Ssrc = Ssrc,
-                EncryptionKey = SecretKey,
-                EncryptionMode = EncryptionMode,
+                LocalPort = _localPort,
+                Ssrc = _ssrc,
+                EncryptionKey = _secretKey!,
+                EncryptionMode = _encryptionMode!,
             };
 
             var streamer = new AudioStreamer(new OpusAudioEncoder(Connectivity.VoiceSampleRate, Connectivity.VoiceChannels), endPointInfo, cancellationToken: CancellationTokenSource.Token);
@@ -265,7 +254,7 @@ namespace Driscod.Gateway
         {
             await Send((int)MessageType.Speaking, new JObject
             {
-                { "ssrc", Ssrc },
+                { "ssrc", _ssrc },
                 { "delay", 0 },
                 { "speaking", 1 },
             });
@@ -276,7 +265,7 @@ namespace Driscod.Gateway
         {
             await Send((int)MessageType.Speaking, new JObject
             {
-                { "ssrc", Ssrc },
+                { "ssrc", _ssrc },
                 { "delay", 0 },
                 { "speaking", 0 },
             });
@@ -285,26 +274,26 @@ namespace Driscod.Gateway
 
         private IPEndPoint GetUdpEndpoint()
         {
-            return new IPEndPoint(IPAddress.Parse(UdpSocketIpAddress), UdpSocketPort);
+            return new IPEndPoint(IPAddress.Parse(_udpSocketIpAddress!), _udpSocketPort!.Value);
         }
 
         private async Task FetchExternalAddress()
         {
             var datagram = new byte[] { 0, 1, 0, 70 }
-                .Concat(Ssrc.ToBytesBigEndian())
+                .Concat(_ssrc.ToBytesBigEndian())
                 .Concat(Enumerable.Repeat((byte)0, 66))
                 .ToArray();
 
             byte[] response;
 
-            using (var udpSocket = new UdpSocket(UdpSocketIpAddress, UdpSocketPort) { ListenForPackets = true })
+            using (var udpSocket = new UdpSocket(_udpSocketIpAddress!, _udpSocketPort!.Value) { ListenForPackets = true })
             {
                 await udpSocket.Send(datagram);
                 response = await udpSocket.WaitForNextPacket();
             }
 
-            LocalPort = (response[response.Length - 2] << 8) + response[response.Length - 1];
-            ExternalAddress = Encoding.UTF8.GetString(response.Skip(8).TakeWhile(x => x != 0).ToArray());
+            _localPort = (response[response.Length - 2] << 8) + response[response.Length - 1];
+            _externalAddress = Encoding.UTF8.GetString(response.Skip(8).TakeWhile(x => x != 0).ToArray());
         }
 
         public enum MessageType

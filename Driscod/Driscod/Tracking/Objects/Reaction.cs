@@ -4,9 +4,9 @@ namespace Driscod.Tracking.Objects
 {
     public class Reaction : DiscordObject, IUntracked
     {
-        private string _emojiId;
+        private string? _emojiId;
 
-        public Emoji Emoji => Bot.GetObject<Emoji>(_emojiId);
+        public Emoji Emoji => Bot.GetObject<Emoji>(_emojiId!)!;
 
         public int Count { get; private set; }
 
@@ -14,9 +14,9 @@ namespace Driscod.Tracking.Objects
 
         internal override void UpdateFromDocument(JObject doc)
         {
-            _emojiId = doc["emoji"]["id"].ToObject<string>();
-            Count = doc["count"].ToObject<int>();
-            BotUserReacted = doc["me"].ToObject<bool>();
+            _emojiId = doc["emoji"]!["id"]!.ToObject<string>();
+            Count = doc["count"]!.ToObject<int>();
+            BotUserReacted = doc["me"]!.ToObject<bool>();
         }
     }
 }

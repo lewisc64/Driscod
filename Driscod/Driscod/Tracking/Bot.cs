@@ -17,6 +17,12 @@ namespace Driscod.Tracking
 {
     public interface IBot
     {
+        event EventHandler<Message>? OnMessage;
+        event EventHandler<Message>? OnMessageEdit;
+        event EventHandler<(Channel Channel, User User)>? OnTyping;
+        event EventHandler<(Guild Guild, Channel Channel, User User, bool IsDeaf, bool IsMuted)>? OnVoiceStateChange;
+        event EventHandler<(Guild Guild, User User)>? OnUserJoin;
+
         User User { get; }
 
         IEnumerable<Emoji> Emojis { get; }
@@ -29,26 +35,16 @@ namespace Driscod.Tracking
 
         bool Ready { get; }
 
-        event EventHandler<Message> OnMessage;
-
-        event EventHandler<Message> OnMessageEdit;
-
-        event EventHandler<(Channel Channel, User User)> OnTyping;
-
-        event EventHandler<(Guild Guild, Channel Channel, User User, bool IsDeaf, bool IsMuted)> OnVoiceStateChange;
-
-        event EventHandler<(Guild Guild, User User)> OnUserJoin;
-
         Task Start();
 
         Task Stop();
 
-        Task<JObject> SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null);
+        Task<JObject?> SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject? doc = null, IEnumerable<IMessageAttachment>? attachments = null, Dictionary<string, string>? queryParams = null);
 
-        Task<T> SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null)
+        Task<T?> SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject? doc = null, IEnumerable<IMessageAttachment>? attachments = null, Dictionary<string, string>? queryParams = null)
             where T : JContainer;
 
-        T GetObject<T>(string id)
+        T? GetObject<T>(string id)
             where T : DiscordObject;
 
         IEnumerable<T> GetObjects<T>()
@@ -56,7 +52,7 @@ namespace Driscod.Tracking
 
         void DeleteObject<T>(string id);
 
-        void CreateOrUpdateObject<T>(JObject doc, Shard discoveredBy = null)
+        void CreateOrUpdateObject<T>(JObject doc, Shard discoveredBy)
             where T : DiscordObject, new();
     }
 
@@ -64,21 +60,29 @@ namespace Driscod.Tracking
     {
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
-        private Dictionary<Tuple<string, string>, string> RateLimitPathBucketMap { get; set; } = new Dictionary<Tuple<string, string>, string>();
-
-        private Dictionary<string, RateLimit> RateLimits { get; set; } = new Dictionary<string, RateLimit>();
-
-        private Dictionary<Type, Dictionary<string, DiscordObject>> Objects { get; set; } = new Dictionary<Type, Dictionary<string, DiscordObject>>();
-
-        private List<Shard> _shards;
-
+        private readonly Dictionary<Tuple<string, string?>, string> _rateLimitPathBucketMap = new();
+        private readonly Dictionary<string, RateLimit> _rateLimits = new();
+        private readonly Dictionary<Type, Dictionary<string, DiscordObject>> _objects = new();
         private readonly string _token;
-
         private readonly int _intents;
+        private List<Shard> _shards = new();
+        private string? _userId = null;
+        private HttpClient? _httpClient = null;
 
-        private string _userId;
+        public event EventHandler<Message>? OnMessage;
+        public event EventHandler<Message>? OnMessageEdit;
+        public event EventHandler<(Channel Channel, User User)>? OnTyping;
+        public event EventHandler<(Guild Guild, Channel Channel, User User, bool IsDeaf, bool IsMuted)>? OnVoiceStateChange;
+        public event EventHandler<(Guild Guild, User User)>? OnUserJoin;
 
-        private HttpClient _httpClient = null;
+        public Bot(string token, Intents intents)
+        {
+            _token = token ?? throw new ArgumentNullException(nameof(token), "Token cannot be null.");
+            _intents = (int)intents;
+
+            CreateShards();
+            CreateDispatchListeners();
+        }
 
         private HttpClient HttpClient
         {
@@ -95,7 +99,7 @@ namespace Driscod.Tracking
             }
         }
 
-        public User User => GetObject<User>(_userId);
+        public User User => GetObject<User>(_userId!)!;
 
         public IEnumerable<Emoji> Emojis => GetObjects<Emoji>();
 
@@ -107,28 +111,9 @@ namespace Driscod.Tracking
 
         public bool Ready => _shards.All(x => x.Ready);
 
-        public event EventHandler<Message> OnMessage;
-
-        public event EventHandler<Message> OnMessageEdit;
-
-        public event EventHandler<(Channel Channel, User User)> OnTyping;
-
-        public event EventHandler<(Guild Guild, Channel Channel, User User, bool IsDeaf, bool IsMuted)> OnVoiceStateChange;
-
-        public event EventHandler<(Guild Guild, User User)> OnUserJoin;
-
-        public Bot(string token, Intents intents)
-        {
-            _token = token ?? throw new ArgumentNullException(nameof(token), "Token cannot be null.");
-            _intents = (int)intents;
-
-            CreateShards();
-            CreateDispatchListeners();
-        }
-
         public async Task Start()
         {
-            var remainingConnections = JObject.Parse(HttpClient.GetAsync("gateway/bot").Result.Content.ReadAsStringAsync().Result)["session_start_limit"]["remaining"].ToObject<int>();
+            var remainingConnections = await FetchRemainingConnections();
             if (remainingConnections < _shards.Count)
             {
                 throw new InvalidOperationException("Bot cannot start, session creation limit met.");
@@ -155,17 +140,17 @@ namespace Driscod.Tracking
             {
                 await shard.Stop();
             }
-            Objects.Clear();
-            RateLimitPathBucketMap.Clear();
-            RateLimits.Clear();
+            _objects.Clear();
+            _rateLimitPathBucketMap.Clear();
+            _rateLimits.Clear();
         }
 
-        public async Task<JObject> SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null)
+        public async Task<JObject?> SendJson(HttpMethod method, string pathFormat, string[] pathParams, JObject? doc = null, IEnumerable<IMessageAttachment>? attachments = null, Dictionary<string, string>? queryParams = null)
         {
             return await SendJson<JObject>(method, pathFormat, pathParams, doc: doc, attachments: attachments, queryParams: queryParams);
         }
 
-        public async Task<T> SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject doc = null, IEnumerable<IMessageAttachment> attachments = null, Dictionary<string, string> queryParams = null)
+        public async Task<T?> SendJson<T>(HttpMethod method, string pathFormat, string[] pathParams, JObject? doc = null, IEnumerable<IMessageAttachment>? attachments = null, Dictionary<string, string>? queryParams = null)
             where T : JContainer
         {
             if (pathFormat.StartsWith("/"))
@@ -175,7 +160,7 @@ namespace Driscod.Tracking
 
             var json = doc?.ToString(Formatting.None);
 
-            T output = default;
+            T? output = default;
             var requestPath = string.Format(pathFormat, pathParams);
 
             if (queryParams != null)
@@ -216,11 +201,11 @@ namespace Driscod.Tracking
             };
 
             // only take first (major) param into consideration for rate limits.
-            var key = new Tuple<string, string>(pathFormat, pathParams.FirstOrDefault());
+            var key = new Tuple<string, string?>(pathFormat, pathParams?.FirstOrDefault());
 
-            if (RateLimitPathBucketMap.ContainsKey(key))
+            if (_rateLimitPathBucketMap.ContainsKey(key))
             {
-                await RateLimits[RateLimitPathBucketMap[key]].PerformRequest(requestFunc);
+                await _rateLimits[_rateLimitPathBucketMap[key]].PerformRequest(requestFunc);
             }
             else
             {
@@ -228,10 +213,10 @@ namespace Driscod.Tracking
                 if (response.Headers.Contains("X-RateLimit-Bucket"))
                 {
                     var bucketId = response.Headers.First(x => x.Key.ToLower() == "X-RateLimit-Bucket".ToLower()).Value.First();
-                    RateLimitPathBucketMap[key] = bucketId;
-                    if (!RateLimits.ContainsKey(bucketId))
+                    _rateLimitPathBucketMap[key] = bucketId;
+                    if (!_rateLimits.ContainsKey(bucketId))
                     {
-                        RateLimits[bucketId] = new RateLimit(bucketId);
+                        _rateLimits[bucketId] = new RateLimit(bucketId);
                     }
                 }
                 response.EnsureSuccessStatusCode();
@@ -243,27 +228,32 @@ namespace Driscod.Tracking
         public IEnumerable<T> GetObjects<T>()
             where T : DiscordObject
         {
-            return Objects.ContainsKey(typeof(T)) ? Objects[typeof(T)].Values.Cast<T>() : new T[0];
+            return _objects.ContainsKey(typeof(T)) ? _objects[typeof(T)].Values.Cast<T>() : new T[0];
         }
 
-        public T GetObject<T>(string id)
+        public T? GetObject<T>(string id)
             where T : DiscordObject
         {
-            if (id != null && Objects.ContainsKey(typeof(T)) && Objects[typeof(T)].ContainsKey(id))
+            if (id != null && _objects.ContainsKey(typeof(T)) && _objects[typeof(T)].ContainsKey(id))
             {
-                return (T)Objects[typeof(T)][id];
+                return (T)_objects[typeof(T)][id];
             }
             return null;
         }
 
         public void DeleteObject<T>(string id)
         {
-            Objects[typeof(T)].Remove(id);
+            _objects[typeof(T)].Remove(id);
         }
 
-        public void CreateOrUpdateObject<T>(JObject doc, Shard discoveredBy = null)
+        public void CreateOrUpdateObject<T>(JObject doc, Shard discoveredBy)
             where T : DiscordObject, new()
         {
+            if (!doc.ContainsKey("id") || doc["id"]!.Type == JTokenType.Null)
+            {
+                throw new ArgumentException($"Object document does not contain an ID: {doc}", nameof(doc));
+            }
+
             var type = typeof(T);
 
             if (typeof(IUntracked).IsAssignableFrom(type))
@@ -273,17 +263,17 @@ namespace Driscod.Tracking
 
             Dictionary<string, DiscordObject> table;
 
-            lock (Objects)
+            lock (_objects)
             {
-                if (!Objects.ContainsKey(type))
+                if (!_objects.ContainsKey(type))
                 {
-                    Objects[type] = new Dictionary<string, DiscordObject>();
+                    _objects[type] = new Dictionary<string, DiscordObject>();
                 }
 
-                table = Objects[type];
+                table = _objects[type];
             }
 
-            var id = doc["id"].ToObject<string>();
+            var id = doc!["id"]!.ToObject<string>()!;
 
             lock (table)
             {
@@ -293,7 +283,7 @@ namespace Driscod.Tracking
                 }
                 else
                 {
-                    table[id] = DiscordObject.Create<T>(this, doc, discoveredBy: discoveredBy);
+                    table[id] = DiscordObject.Create<T>(this, doc, discoveredBy);
                 }
             }
         }
@@ -326,8 +316,8 @@ namespace Driscod.Tracking
                     EventNames.Ready,
                     data =>
                     {
-                        _userId = data["user"]["id"].ToObject<string>();
-                        CreateOrUpdateObject<User>(data["user"].ToObject<JObject>());
+                        _userId = data!["user"]!["id"]!.ToObject<string>();
+                        CreateOrUpdateObject<User>(data["user"]!.ToObject<JObject>()!, discoveredBy: shard);
                         SetShardBotNames();
                     });
 
@@ -338,7 +328,7 @@ namespace Driscod.Tracking
                     {
                         if (Ready)
                         {
-                            OnMessage?.Invoke(this, DiscordObject.Create<Message>(this, data, discoveredBy: shard));
+                            OnMessage?.Invoke(this, DiscordObject.Create<Message>(this, data!, discoveredBy: shard));
                         }
                     });
 
@@ -349,7 +339,7 @@ namespace Driscod.Tracking
                     {
                         if (Ready)
                         {
-                            OnMessageEdit?.Invoke(this, DiscordObject.Create<Message>(this, data, discoveredBy: shard));
+                            OnMessageEdit?.Invoke(this, DiscordObject.Create<Message>(this, data!, discoveredBy: shard));
                         }
                     });
 
@@ -360,7 +350,7 @@ namespace Driscod.Tracking
                     {
                         if (Ready)
                         {
-                            OnTyping?.Invoke(this, (GetObject<Channel>(data["channel_id"].ToObject<string>()), GetObject<User>(data["user_id"].ToObject<string>())));
+                            OnTyping?.Invoke(this, (GetObject<Channel>(data!["channel_id"]!.ToObject<string>()!)!, GetObject<User>(data["user_id"]!.ToObject<string>()!))!);
                         }
                     });
 
@@ -369,7 +359,7 @@ namespace Driscod.Tracking
                     new[] { EventNames.GuildCreate, EventNames.GuildUpdate },
                     data =>
                     {
-                        CreateOrUpdateObject<Guild>(data, discoveredBy: shard);
+                        CreateOrUpdateObject<Guild>(data!, discoveredBy: shard);
                     });
 
                 shard.AddListener<JObject>(
@@ -377,7 +367,7 @@ namespace Driscod.Tracking
                     new[] { EventNames.GuildDelete },
                     data =>
                     {
-                        DeleteObject<Guild>(data["guild_id"].ToObject<string>());
+                        DeleteObject<Guild>(data!["guild_id"]!.ToObject<string>()!);
                     });
 
                 shard.AddListener<JObject>(
@@ -385,9 +375,9 @@ namespace Driscod.Tracking
                     new[] { EventNames.ChannelCreate, EventNames.ChannelUpdate },
                     data =>
                     {
-                        if (data.ContainsKey("guild_id"))
+                        if (data!.ContainsKey("guild_id"))
                         {
-                            GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdateChannel(data);
+                            GetObject<Guild>(data["guild_id"]!.ToObject<string>()!)!.UpdateChannel(data);
                         }
                         else
                         {
@@ -400,7 +390,7 @@ namespace Driscod.Tracking
                     EventNames.ChannelDelete,
                     data =>
                     {
-                        GetObject<Guild>(data["guild_id"].ToObject<string>()).DeleteChannel(data["id"].ToObject<string>());
+                        GetObject<Guild>(data!["guild_id"]!.ToObject<string>()!)!.DeleteChannel(data["id"]!.ToObject<string>()!);
                     });
 
                 shard.AddListener<JObject>(
@@ -408,7 +398,7 @@ namespace Driscod.Tracking
                     EventNames.GuildEmojisUpdate,
                     data =>
                     {
-                        data["id"] = data["guild_id"];
+                        data!["id"] = data["guild_id"];
                         CreateOrUpdateObject<Guild>(data, discoveredBy: shard);
                     });
 
@@ -417,7 +407,7 @@ namespace Driscod.Tracking
                     new[] { EventNames.GuildRoleCreate, EventNames.GuildRoleUpdate },
                     data =>
                     {
-                        GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdateRole(data["role"].ToObject<JObject>());
+                        GetObject<Guild>(data!["guild_id"]!.ToObject<string>()!)!.UpdateRole(data["role"]!.ToObject<JObject>()!);
                     });
 
                 shard.AddListener<JObject>(
@@ -425,7 +415,7 @@ namespace Driscod.Tracking
                     EventNames.GuildRoleDelete,
                     data =>
                     {
-                        GetObject<Guild>(data["guild_id"].ToObject<string>()).DeleteRole(data["role_id"].ToObject<string>());
+                        GetObject<Guild>(data!["guild_id"]!.ToObject<string>()!)!.DeleteRole(data["role_id"]!.ToObject<string>()!);
                     });
 
                 shard.AddListener<JObject>(
@@ -433,7 +423,7 @@ namespace Driscod.Tracking
                     EventNames.PresenceUpdate,
                     data =>
                     {
-                        GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdatePresence(data);
+                        GetObject<Guild>(data!["guild_id"]!.ToObject<string>()!)!.UpdatePresence(data);
                     });
 
                 shard.AddListener<JObject>(
@@ -441,13 +431,13 @@ namespace Driscod.Tracking
                     EventNames.VoiceStateUpdate,
                     data =>
                     {
-                        var userId = data.ContainsKey("member") ? data["member"]["user"]["id"].ToObject<string>() : data["user_id"].ToObject<string>();
-                        var deaf = data["self_deaf"].ToObject<bool>() || data["deaf"].ToObject<bool>();
-                        var mute = data["self_mute"].ToObject<bool>() || data["mute"].ToObject<bool>();
+                        var userId = data!.ContainsKey("member") ? data["member"]!["user"]!["id"]!.ToObject<string>()! : data["user_id"]!.ToObject<string>()!;
+                        var deaf = data["self_deaf"]!.ToObject<bool>() || data["deaf"]!.ToObject<bool>();
+                        var mute = data["self_mute"]!.ToObject<bool>() || data["mute"]!.ToObject<bool>();
 
-                        GetObject<Guild>(data["guild_id"].ToObject<string>()).UpdateVoiceState(data);
+                        GetObject<Guild>(data["guild_id"]!.ToObject<string>()!)!.UpdateVoiceState(data);
 
-                        OnVoiceStateChange?.Invoke(this, (GetObject<Guild>(data["guild_id"].ToObject<string>()), GetObject<Channel>(data["channel_id"].ToObject<string>()), GetObject<User>(userId), deaf, mute));
+                        OnVoiceStateChange?.Invoke(this, (GetObject<Guild>(data["guild_id"]!.ToObject<string>()!)!, GetObject<Channel>(data["channel_id"]!.ToObject<string>()!)!, GetObject<User>(userId), deaf, mute)!);
                     });
 
                 shard.AddListener<JObject>(
@@ -455,11 +445,11 @@ namespace Driscod.Tracking
                     new[] { EventNames.GuildMemberAdd },
                     data =>
                     {
-                        var guild = GetObject<Guild>(data["guild_id"].ToObject<string>());
+                        var guild = GetObject<Guild>(data!["guild_id"]!.ToObject<string>()!);
                         if (guild != null)
                         {
                             guild.UpdateMember(data);
-                            OnUserJoin?.Invoke(this, (guild, GetObject<User>(data["user"]["id"].ToObject<string>())));
+                            OnUserJoin?.Invoke(this, (guild, GetObject<User>(data["user"]!["id"]!.ToObject<string>()!)!));
                         }
                     });
 
@@ -468,11 +458,8 @@ namespace Driscod.Tracking
                     new[] { EventNames.GuildMemberUpdate },
                     data =>
                     {
-                        var guild = GetObject<Guild>(data["guild_id"].ToObject<string>());
-                        if (guild != null)
-                        {
-                            guild.UpdateMember(data);
-                        }
+                        var guild = GetObject<Guild>(data!["guild_id"]!.ToObject<string>()!);
+                        guild?.UpdateMember(data);
                     });
 
                 shard.AddListener<JObject>(
@@ -480,8 +467,8 @@ namespace Driscod.Tracking
                     EventNames.GuildMemberRemove,
                     data =>
                     {
-                        var userId = data["user"]["id"].ToObject<string>();
-                        GetObject<Guild>(data["guild_id"].ToObject<string>()).DeleteMember(userId);
+                        var userId = data!["user"]!["id"]!.ToObject<string>()!;
+                        GetObject<Guild>(data["guild_id"]!.ToObject<string>()!)!.DeleteMember(userId);
 
                         if (!Guilds.Any(x => x.Members.Any(y => y.User.Id == userId)))
                         {
@@ -490,6 +477,13 @@ namespace Driscod.Tracking
                         }
                     });
             }
+        }
+
+        private async Task<int> FetchRemainingConnections()
+        {
+            var response = await HttpClient.GetAsync("gateway/bot");
+            var content = await response.Content.ReadAsStringAsync();
+            return JObject.Parse(content)["session_start_limit"]!["remaining"]!.ToObject<int>();
         }
     }
 }
