@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace Driscod.Audio
+namespace Driscod.Audio.AudioSource
 {
     public class AudioFile : IAudioSource
     {

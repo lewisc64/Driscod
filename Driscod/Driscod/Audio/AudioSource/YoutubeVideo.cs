@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using YoutubeExplode;
 using YoutubeExplode.Videos.Streams;
 
-namespace Driscod.Audio
+namespace Driscod.Audio.AudioSource
 {
     public class YoutubeVideo : IAudioSource
     {

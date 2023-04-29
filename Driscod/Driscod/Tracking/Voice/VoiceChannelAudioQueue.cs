@@ -1,4 +1,4 @@
-﻿using Driscod.Audio;
+﻿using Driscod.Audio.AudioSource;
 using Driscod.Extensions;
 using Driscod.Tracking.Objects;
 using System;
