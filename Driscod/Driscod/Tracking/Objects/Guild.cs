@@ -42,7 +42,7 @@ public class Guild : DiscordObject
 
     public VoiceConnection? VoiceConnection { get; set; }
 
-    public bool HasActiveVoiceConnection => VoiceConnection != null && !VoiceConnection.Stale;
+    public bool HasActiveVoiceConnection => VoiceConnection != null && !VoiceConnection.Stale && VoiceConnection.Connected;
 
     public IEnumerable<Channel> TextChannels => Channels.Where(x => x.ChannelType == ChannelType.Text).OrderBy(x => x.Position);
 
