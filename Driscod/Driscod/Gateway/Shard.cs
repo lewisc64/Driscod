@@ -86,10 +86,10 @@ namespace Driscod.Gateway
                 SessionId = data["session_id"].ToObject<string>();
             });
 
-            AddListener<object>((int)MessageType.InvalidSession, _ =>
+            AddListener<object>((int)MessageType.InvalidSession, async _ =>
             {
                 Logger.Warn($"[{Name}] Invalid session.");
-                Restart();
+                await Restart();
             });
         }
 

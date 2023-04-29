@@ -1,25 +1,28 @@
-﻿using Driscod.Tracking.Voice;
+﻿using Driscod.Gateway;
+using Driscod.Gateway.Consts;
+using Driscod.Network;
+using Driscod.Tracking.Voice;
 using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Driscod.Tracking.Objects
 {
     public class Guild : DiscordObject
     {
+        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
         private readonly List<string> _emojiIds = new List<string>();
-
         private readonly List<string> _channelIds = new List<string>();
-
         private readonly List<string> _roleIds = new List<string>();
-
         private readonly List<GuildMember> _members = new List<GuildMember>();
-
         private readonly List<Presence> _presences = new List<Presence>();
-
         private readonly List<VoiceState> _voiceStates = new List<VoiceState>();
 
-        internal object VoiceLock { get; } = new object();
+        private readonly SemaphoreSlim _voiceSemaphore = new(1);
 
         public IEnumerable<Presence> Presences => _presences.ToArray();
 
@@ -58,6 +61,35 @@ namespace Driscod.Tracking.Objects
         public string DiscoverySplash { get; private set; }
 
         public int PremiumSubscriptionCount { get; private set; }
+
+        public async Task<VoiceConnection> ConnectVoice(Channel channel)
+        {
+            if (channel.ChannelType != ChannelType.Voice)
+            {
+                throw new ArgumentException($"Cannot connect voice to channels of type '{channel.ChannelType}'.", nameof(channel));
+            }
+            await _voiceSemaphore.WaitAsync();
+            try
+            {
+                await DisconnectVoice();
+                VoiceConnection = new VoiceConnection(channel);
+                await VoiceConnection.Connect();
+                return VoiceConnection;
+            }
+            finally
+            {
+                _voiceSemaphore.Release();
+            }
+        }
+
+        public async Task DisconnectVoice()
+        {
+            if (VoiceConnection is not null && VoiceConnection.Connected)
+            {
+                await VoiceConnection.Disconnect();
+            }
+            VoiceConnection = null;
+        }
 
         internal void UpdatePresence(JObject doc)
         {

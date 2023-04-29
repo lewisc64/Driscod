@@ -129,7 +129,7 @@ namespace Driscod.Gateway
             return Task.CompletedTask;
         }
 
-        public virtual Task Stop()
+        public virtual async Task Stop()
         {
             KeepSocketOpen = false;
             if (Socket.State != WebSocketState.Closed)
@@ -138,16 +138,14 @@ namespace Driscod.Gateway
             }
             while (Socket.State != WebSocketState.Closed || Tasks.Any())
             {
-                Thread.Sleep(200);
+                await Task.Delay(200);
             }
-
-            return Task.CompletedTask;
         }
 
-        public void Restart()
+        public async Task Restart()
         {
-            Stop();
-            Start();
+            await Stop();
+            await Start();
         }
 
         public async Task<T> ListenForEvent<T>(int type, Action listenerCreateCallback = null, Func<T, bool> validator = null, TimeSpan? timeout = null)

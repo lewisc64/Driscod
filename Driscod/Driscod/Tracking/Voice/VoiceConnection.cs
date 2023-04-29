@@ -1,6 +1,9 @@
 ﻿using Driscod.Audio;
 using Driscod.Gateway;
+using Driscod.Gateway.Consts;
+using Driscod.Network;
 using Driscod.Tracking.Objects;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,65 +15,62 @@ namespace Driscod.Tracking.Voice
         private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
         private readonly string _channelId;
+        private VoiceGateway _voiceGateway = null;
 
-        private VoiceGateway VoiceGateway { get; set; }
+        public EventHandler OnPlayAudio { get; set; }
+        public EventHandler OnStopAudio { get; set; }
+
+        internal VoiceConnection(Channel channel)
+        {
+            _channelId = channel.Id;
+            Bot = channel.Bot;
+        }
 
         private IBot Bot { get; set; }
 
         private AudioStreamer AudioStreamer { get; set; }
 
-        public string VoiceSessionId => VoiceGateway.SessionId;
-
         public bool Playing => AudioStreamer.TransmittingAudio;
 
-        public bool Stale => !VoiceGateway.Running;
+        public bool Connected { get; private set; } = false;
+
+        public bool Stale => !(_voiceGateway?.Running ?? true);
 
         public Channel Channel => Bot.GetObject<Channel>(_channelId);
 
         public Guild Guild => Channel?.Guild;
 
-        public EventHandler OnPlayAudio { get; set; }
-
-        public EventHandler OnStopAudio { get; set; }
-
-        internal VoiceConnection(Channel channel, VoiceGateway voice)
+        public async Task Connect()
         {
-            _channelId = channel.Id;
-
-            Bot = channel.Bot;
-            VoiceGateway = voice;
-
-            VoiceGateway.OnStop += (a, b) =>
+            if (Connected)
             {
-                Disconnect();
-            };
-
-            if (!VoiceGateway.Running)
-            {
-                VoiceGateway.Start();
+                throw new InvalidOperationException("Already connected.");
             }
-
-            while (!VoiceGateway.Ready)
-            {
-                Thread.Sleep(200);
-            }
-
-            AudioStreamer = VoiceGateway.CreateAudioStreamer();
-
+            await CreateVoiceGateway();
+            AudioStreamer = _voiceGateway.CreateAudioStreamer();
             AudioStreamer.OnAudioStart += (a, b) =>
             {
                 OnPlayAudio?.Invoke(this, EventArgs.Empty);
             };
-
             AudioStreamer.OnAudioStop += (a, b) =>
             {
                 OnStopAudio?.Invoke(this, EventArgs.Empty);
             };
+            Connected = true;
+        }
+
+        public async Task Disconnect()
+        {
+            ThrowIfNotConnected();
+
+            await _voiceGateway.Stop();
+            Connected = false;
         }
 
         public async Task PlayAudio(IAudioSource audioSource, CancellationToken cancellationToken = default)
         {
             ThrowIfStale();
+            ThrowIfNotConnected();
 
             var tcs = new TaskCompletionSource<bool>();
 
@@ -104,29 +104,6 @@ namespace Driscod.Tracking.Voice
             }
         }
 
-        public Task Disconnect()
-        {
-            if (Guild == null)
-            {
-                Logger.Warn("Attempted to disconnect a voice connection, but was unable to locate the guild. Assuming connection has already closed.");
-                return Task.CompletedTask;
-            }
-
-            lock (Guild.VoiceLock)
-            {
-                if (VoiceGateway != null && VoiceGateway.Running)
-                {
-                    VoiceGateway.Stop().Wait();
-                }
-                if (Guild.VoiceConnection == this)
-                {
-                    Guild.VoiceConnection = null;
-                }
-            }
-
-            return Task.CompletedTask;
-        }
-
         public void Dispose()
         {
             Dispose(true);
@@ -137,10 +114,73 @@ namespace Driscod.Tracking.Voice
         {
             if (disposing)
             {
-                Disconnect();
-                AudioStreamer = null;
-                VoiceGateway = null;
+                Disconnect().Wait();
             }
+        }
+
+        private async Task CreateVoiceGateway()
+        {
+            var callCount = 0;
+            Action sendAction = async () =>
+            {
+                if (++callCount >= 2)
+                {
+                    await Channel.DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new JObject
+                    {
+                        { "guild_id", Channel.Guild.Id },
+                        { "channel_id", Channel.Id },
+                        { "self_mute", false },
+                        { "self_deaf", false },
+                    });
+                }
+            };
+
+            JObject stateData = null;
+            JObject serverData = null;
+
+            try
+            {
+                Task.WhenAll(
+                    Task.Run(async () =>
+                    {
+                        stateData = await Channel.DiscoveredOnShard.ListenForEvent<JObject>(
+                            (int)Shard.MessageType.Dispatch,
+                            EventNames.VoiceStateUpdate,
+                            listenerCreateCallback: sendAction,
+                            validator: data =>
+                            {
+                                return data["guild_id"].ToObject<string>() == Guild.Id && data["channel_id"].ToObject<string>() == Channel.Id && data["user_id"].ToObject<string>() == Bot.User.Id;
+                            },
+                            timeout: TimeSpan.FromSeconds(10));
+                    }),
+                    Task.Run(async () =>
+                    {
+                        serverData = await Channel.DiscoveredOnShard.ListenForEvent<JObject>(
+                            (int)Shard.MessageType.Dispatch,
+                            EventNames.VoiceServerUpdate,
+                            listenerCreateCallback: sendAction,
+                            validator: data =>
+                            {
+                                return data["guild_id"].ToObject<string>() == Guild.Id;
+                            },
+                            timeout: TimeSpan.FromSeconds(10));
+                    })).Wait(TimeSpan.FromSeconds(10));
+            }
+            catch (TimeoutException ex)
+            {
+                Logger.Warn(ex, "Timed out while fetching voice data.");
+            }
+
+            _voiceGateway = new VoiceGateway(
+                    Channel.DiscoveredOnShard,
+                    Connectivity.FormatVoiceSocketEndpoint(serverData["endpoint"].ToObject<string>()),
+                    Guild.Id,
+                    Bot.User.Id,
+                    (stateData?["session_id"]?.ToObject<string>() ?? null) ?? throw new InvalidOperationException("Failed to get session ID."),
+                    serverData?["token"]?.ToObject<string>() ?? throw new InvalidOperationException("Failed to get token."));
+
+            await _voiceGateway.Start();
+            await _voiceGateway.WaitForReady();
         }
 
         private void ThrowIfStale()
@@ -148,6 +188,14 @@ namespace Driscod.Tracking.Voice
             if (Stale)
             {
                 throw new InvalidOperationException("Connection object is stale.");
+            }
+        }
+
+        private void ThrowIfNotConnected()
+        {
+            if (!Connected)
+            {
+                throw new InvalidOperationException("Not connected.");
             }
         }
     }

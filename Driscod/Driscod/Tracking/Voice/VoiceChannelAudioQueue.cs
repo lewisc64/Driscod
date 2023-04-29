@@ -41,7 +41,7 @@ namespace Driscod.Tracking.Voice
             {
                 if (Guild.VoiceConnection == null || Guild.VoiceConnection.Stale)
                 {
-                    Channel.ConnectVoice();
+                    Channel.ConnectVoice().Wait();
                 }
 
                 return Guild.VoiceConnection;
@@ -142,7 +142,10 @@ namespace Driscod.Tracking.Voice
                             _internalMusicQueue.TryDequeue(out var _);
                             if (!_internalMusicQueue.Any())
                             {
-                                OnQueueEmpty?.Invoke(this, EventArgs.Empty);
+                                Task.Run(() =>
+                                {
+                                    OnQueueEmpty?.Invoke(this, EventArgs.Empty);
+                                }).Forget();
                             }
                         }
                     }

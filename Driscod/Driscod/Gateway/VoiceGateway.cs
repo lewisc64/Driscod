@@ -6,6 +6,7 @@ using Driscod.Network.Udp;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Text;
@@ -56,7 +57,7 @@ namespace Driscod.Gateway
 
         protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4006, 4014 }; // Should not reconnect upon forced disconnection.
 
-        public override string Name => $"VOICE-{string.Join('-', SessionId.Reverse().Take(2))}";
+        public override string Name => $"VOICE-{SessionId}";
 
         public bool Ready { get; private set; } = false;
 
@@ -91,7 +92,7 @@ namespace Driscod.Gateway
 
             Socket.Closed += (a, b) =>
             {
-                OnStop.Invoke(this, EventArgs.Empty);
+                OnStop?.Invoke(this, EventArgs.Empty);
             };
 
             AddListener<JObject>((int)MessageType.Hello, data =>
@@ -147,26 +148,29 @@ namespace Driscod.Gateway
             });
         }
 
+        public override async Task Start()
+        {
+            await base.Start();
+            Task.Run(async () =>
+            {
+                await Task.Delay(5000, CancellationTokenSource.Token);
+                if (Running && !Ready)
+                {
+                    await Restart();
+                }
+            }).Forget();
+        }
+
         public override async Task Stop()
         {
             try
             {
-                await ParentShard.ListenForEvent<JObject>(
-                    (int)Shard.MessageType.Dispatch,
-                    "VOICE_STATE_UPDATE",
-                    listenerCreateCallback: async () =>
+                await ParentShard.Send((int)Shard.MessageType.VoiceStateUpdate, new JObject
                     {
-                        await ParentShard.Send((int)Shard.MessageType.VoiceStateUpdate, new JObject
-                        {
                         { "guild_id", _serverId },
                         { "channel_id", null },
                         { "self_mute", false },
                         { "self_deaf", false },
-                        });
-                    },
-                    validator: data =>
-                    {
-                        return data["guild_id"].ToObject<string>() == _serverId;
                     });
             }
             finally
@@ -188,6 +192,23 @@ namespace Driscod.Gateway
                 }
 
                 await base.Stop();
+            }
+        }
+
+        public async Task WaitForReady(TimeSpan? timeout = null)
+        {
+            if (timeout is null)
+            {
+                timeout = TimeSpan.FromSeconds(10);
+            }
+            var stopwatch = Stopwatch.StartNew();
+            while (!Ready && stopwatch.Elapsed < timeout)
+            {
+                await Task.Delay(50);
+            }
+            if (!Ready)
+            {
+                throw new TimeoutException();
             }
         }
 

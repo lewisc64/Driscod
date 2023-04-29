@@ -118,92 +118,9 @@ namespace Driscod.Tracking.Objects
             await Bot.SendJson(HttpMethod.Post, Connectivity.ChannelMessagesPathFormat, new[] { Id }, doc: body, attachments: attachments);
         }
 
-        public VoiceConnection ConnectVoice()
+        public async Task<VoiceConnection> ConnectVoice()
         {
-            if (ChannelType != ChannelType.Voice)
-            {
-                throw new InvalidOperationException($"Cannot connect voice to channel of type '{ChannelType}'.");
-            }
-
-            lock (Guild.VoiceLock)
-            {
-                string oldSessionId = null;
-
-                if (Guild.VoiceConnection != null && Guild.VoiceConnection.Stale)
-                {
-                    oldSessionId = Guild.VoiceConnection.VoiceSessionId;
-                    Guild.VoiceConnection.Disconnect();
-                    Guild.VoiceConnection = null;
-                }
-
-                if (Guild.VoiceConnection != null)
-                {
-                    throw new InvalidOperationException("Already connected to voice for this guild.");
-                }
-
-                var callCount = 0;
-                Action sendAction = async () =>
-                {
-                    if (++callCount >= 2)
-                    {
-                        await DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new JObject
-                        {
-                            { "guild_id", Guild.Id },
-                            { "channel_id", Id },
-                            { "self_mute", false },
-                            { "self_deaf", false },
-                        });
-                    }
-                };
-
-                JObject stateData = null;
-                JObject serverData = null;
-
-                try
-                {
-                    Task.WhenAll(
-                        Task.Run(async () =>
-                        {
-                            stateData = await DiscoveredOnShard.ListenForEvent<JObject>(
-                                (int)Shard.MessageType.Dispatch,
-                                EventNames.VoiceStateUpdate,
-                                listenerCreateCallback: sendAction,
-                                validator: data =>
-                                {
-                                    return data["guild_id"].ToObject<string>() == Guild.Id && data["channel_id"].ToObject<string>() == Id && data["user_id"].ToObject<string>() == Bot.User.Id;
-                                },
-                                timeout: TimeSpan.FromSeconds(10));
-                        }),
-                        Task.Run(async () =>
-                        {
-                            serverData = await DiscoveredOnShard.ListenForEvent<JObject>(
-                                (int)Shard.MessageType.Dispatch,
-                                EventNames.VoiceServerUpdate,
-                                listenerCreateCallback: sendAction,
-                                validator: data =>
-                                {
-                                    return data["guild_id"].ToObject<string>() == Guild.Id;
-                                },
-                                timeout: TimeSpan.FromSeconds(10));
-                        })).Wait(TimeSpan.FromSeconds(10));
-                }
-                catch (TimeoutException ex)
-                {
-                    Logger.Warn(ex, "Timed out while fetching voice data.");
-                }
-
-                var voiceGateway = new VoiceGateway(
-                        DiscoveredOnShard,
-                        Connectivity.FormatVoiceSocketEndpoint(serverData["endpoint"].ToObject<string>()),
-                        Guild.Id,
-                        Bot.User.Id,
-                        (stateData?["session_id"]?.ToObject<string>() ?? oldSessionId) ?? throw new InvalidOperationException("Failed to get session ID."),
-                        serverData?["token"]?.ToObject<string>() ?? throw new InvalidOperationException("Failed to get token."));
-
-                Guild.VoiceConnection = new VoiceConnection(this, voiceGateway);
-            }
-
-            return Guild.VoiceConnection;
+            return await Guild.ConnectVoice(this);
         }
 
         public string CreateMention()
