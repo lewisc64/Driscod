@@ -39,7 +39,7 @@ public class VoiceChannelAudioQueue : IDisposable
     {
         get
         {
-            if (!Guild.HasActiveVoiceConnection)
+            if (Guild.VoiceConnection is null)
             {
                 Channel.ConnectVoice().Wait();
             }

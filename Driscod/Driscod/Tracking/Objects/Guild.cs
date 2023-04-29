@@ -18,6 +18,7 @@ public class Guild : DiscordObject
     private readonly List<VoiceState> _voiceStates = new List<VoiceState>();
 
     private readonly SemaphoreSlim _voiceSemaphore = new(1);
+    private VoiceConnection? _voiceConnection = null;
 
     public IEnumerable<Presence> Presences => _presences.ToArray();
 
@@ -40,9 +41,17 @@ public class Guild : DiscordObject
         .Where(x => x is not null)
         .Cast<Role>();
 
-    public VoiceConnection? VoiceConnection { get; set; }
-
-    public bool HasActiveVoiceConnection => VoiceConnection != null && !VoiceConnection.Stale && VoiceConnection.Connected;
+    public VoiceConnection? VoiceConnection
+    {
+        get
+        {
+            if (_voiceConnection is not null && !_voiceConnection.Stale && _voiceConnection.Connected)
+            {
+                return _voiceConnection;
+            }
+            return null;
+        }
+    }
 
     public IEnumerable<Channel> TextChannels => Channels.Where(x => x.ChannelType == ChannelType.Text).OrderBy(x => x.Position);
 
@@ -76,9 +85,9 @@ public class Guild : DiscordObject
         try
         {
             await DisconnectVoice();
-            VoiceConnection = new VoiceConnection(channel);
-            await VoiceConnection.Connect();
-            return VoiceConnection;
+            _voiceConnection = new VoiceConnection(channel);
+            await _voiceConnection.Connect();
+            return _voiceConnection;
         }
         finally
         {
@@ -88,11 +97,11 @@ public class Guild : DiscordObject
 
     public async Task DisconnectVoice()
     {
-        if (VoiceConnection is not null && VoiceConnection.Connected)
+        if (_voiceConnection is not null && _voiceConnection.Connected)
         {
-            await VoiceConnection.Disconnect();
+            await _voiceConnection.Disconnect();
         }
-        VoiceConnection = null;
+        _voiceConnection = null;
     }
 
     internal void UpdatePresence(JObject doc)
