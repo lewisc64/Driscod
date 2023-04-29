@@ -7,266 +7,265 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 
-namespace Driscod.Tracking.Objects
+namespace Driscod.Tracking.Objects;
+
+// TODO: the rest of the attributes
+public class Message : DiscordObject, IUntracked
 {
-    // TODO: the rest of the attributes
-    public class Message : DiscordObject, IUntracked
+    private string? _authorId;
+    private string? _channelId;
+    private string? _content;
+    private List<Reaction>? _reactions;
+
+    public User Author => Bot.GetObject<User>(_authorId!)!;
+
+    public Channel Channel => Bot.GetObject<Channel>(_channelId!)!;
+
+    public string Content => _content!;
+
+    public IEnumerable<MessageEmbed> Embeds { get; set; } = null!;
+
+    public IEnumerable<Reaction> Reactions => _reactions!;
+
+    public IEnumerable<Reaction> MyReactions => Reactions.Where(x => x.BotUserReacted);
+
+    public async Task Edit(string newContent)
     {
-        private string? _authorId;
-        private string? _channelId;
-        private string? _content;
-        private List<Reaction>? _reactions;
-
-        public User Author => Bot.GetObject<User>(_authorId!)!;
-
-        public Channel Channel => Bot.GetObject<Channel>(_channelId!)!;
-
-        public string Content => _content!;
-
-        public IEnumerable<MessageEmbed> Embeds { get; set; } = null!;
-
-        public IEnumerable<Reaction> Reactions => _reactions!;
-
-        public IEnumerable<Reaction> MyReactions => Reactions.Where(x => x.BotUserReacted);
-
-        public async Task Edit(string newContent)
-        {
-            var responseDoc = await Bot.SendJson(
-                HttpMethod.Patch,
-                Connectivity.ChannelMessagePathFormat,
-                new[]
-                {
-                    Channel.Id,
-                    Id
-                },
-                new JObject
-                {
-                    { "content", _content },
-                });
-
-            if (responseDoc is null)
+        var responseDoc = await Bot.SendJson(
+            HttpMethod.Patch,
+            Connectivity.ChannelMessagePathFormat,
+            new[]
             {
-                throw new InvalidOperationException("Null response from edit message request.");
-            }
-
-            UpdateFromDocument(responseDoc);
-
-            _content = newContent;
-        }
-
-        public async Task<Message?> GetPreviousMessage()
-        {
-            return await GetRelativeMessage("before");
-        }
-
-        public async Task<Message?> GetNextMessage()
-        {
-            return await GetRelativeMessage("after");
-        }
-
-        public override string ToString()
-        {
-            return Content;
-        }
-
-        internal override void UpdateFromDocument(JObject doc)
-        {
-            Id = doc["id"]!.ToObject<string>()!;
-            _authorId = doc["author"]!["id"]!.ToObject<string>()!;
-            _channelId = doc["channel_id"]!.ToObject<string>()!;
-            _content = doc["content"]!.ToObject<string>()!;
-
-            if (doc.ContainsKey("reactions"))
+                Channel.Id,
+                Id
+            },
+            new JObject
             {
-                _reactions = new List<Reaction>();
-                foreach (var reactionDoc in doc["reactions"]!.ToArray())
-                {
-                    var reaction = Create<Reaction>(Bot, doc, DiscoveredOnShard);
-                    _reactions.Add(reaction);
-                }
-            }
+                { "content", _content },
+            });
 
-            Embeds = doc["embeds"]!.Select(x => x.ToObject<MessageEmbed>()!);
+        if (responseDoc is null)
+        {
+            throw new InvalidOperationException("Null response from edit message request.");
         }
 
-        private async Task<Message?> GetRelativeMessage(string paramName)
+        UpdateFromDocument(responseDoc);
+
+        _content = newContent;
+    }
+
+    public async Task<Message?> GetPreviousMessage()
+    {
+        return await GetRelativeMessage("before");
+    }
+
+    public async Task<Message?> GetNextMessage()
+    {
+        return await GetRelativeMessage("after");
+    }
+
+    public override string ToString()
+    {
+        return Content;
+    }
+
+    internal override void UpdateFromDocument(JObject doc)
+    {
+        Id = doc["id"]!.ToObject<string>()!;
+        _authorId = doc["author"]!["id"]!.ToObject<string>()!;
+        _channelId = doc["channel_id"]!.ToObject<string>()!;
+        _content = doc["content"]!.ToObject<string>()!;
+
+        if (doc.ContainsKey("reactions"))
         {
-            var doc = (await Bot.SendJson<JArray>(
-                HttpMethod.Get,
-                Connectivity.ChannelMessagesPathFormat,
-                new[]
-                {
-                    Channel.Id
-                },
-                queryParams: new Dictionary<string, string>()
-                {
-                    { paramName, Id },
-                    { "limit", "1" }
-                }))
-                ?.ToObject<JObject[]>()
-                ?.FirstOrDefault();
-
-            if (doc == null)
+            _reactions = new List<Reaction>();
+            foreach (var reactionDoc in doc["reactions"]!.ToArray())
             {
-                return null;
+                var reaction = Create<Reaction>(Bot, doc, DiscoveredOnShard);
+                _reactions.Add(reaction);
             }
+        }
 
-            return Create<Message>(Bot, doc, discoveredBy: DiscoveredOnShard);
+        Embeds = doc["embeds"]!.Select(x => x.ToObject<MessageEmbed>()!);
+    }
+
+    private async Task<Message?> GetRelativeMessage(string paramName)
+    {
+        var doc = (await Bot.SendJson<JArray>(
+            HttpMethod.Get,
+            Connectivity.ChannelMessagesPathFormat,
+            new[]
+            {
+                Channel.Id
+            },
+            queryParams: new Dictionary<string, string>()
+            {
+                { paramName, Id },
+                { "limit", "1" }
+            }))
+            ?.ToObject<JObject[]>()
+            ?.FirstOrDefault();
+
+        if (doc == null)
+        {
+            return null;
+        }
+
+        return Create<Message>(Bot, doc, discoveredBy: DiscoveredOnShard);
+    }
+}
+
+public class MessageEmbed
+{
+    private static Dictionary<ContentType, string> ContentTypeNameMap => new Dictionary<ContentType, string>
+    {
+        { ContentType.Rich, "rich" },
+        { ContentType.Image, "image" },
+        { ContentType.Video, "video" },
+        { ContentType.AnimatedGif, "gifv" },
+        { ContentType.Article, "article" },
+        { ContentType.Link, "link" },
+    };
+
+    [JsonProperty("type")]
+    private string? _typeName;
+
+    [JsonIgnore]
+    public ContentType Type
+    {
+        get
+        {
+            return ContentTypeNameMap.First(kvp => kvp.Value == _typeName).Key;
+        }
+
+        set
+        {
+            _typeName = ContentTypeNameMap[value];
         }
     }
 
-    public class MessageEmbed
+    [JsonProperty("title")]
+    public string? Title { get; set; }
+
+    [JsonProperty("description")]
+    public string? Description { get; set; }
+
+    [JsonProperty("url")]
+    public string? Url { get; set; }
+
+    [JsonProperty("timestamp")]
+    public string? Timestamp { get; set; }
+
+    [JsonProperty("color")]
+    public int Color { get; set; }
+
+    [JsonProperty("footer")]
+    public FooterInfo? Footer { get; set; }
+
+    [JsonProperty("image")]
+    public ImageInfo? Image { get; set; }
+
+    [JsonProperty("thumbnail")]
+    public ThumbnailInfo? Thumbnail { get; set; }
+
+    [JsonProperty("video")]
+    public VideoInfo? Video { get; set; }
+
+    [JsonProperty("provider")]
+    public ProviderInfo? Provider { get; set; }
+
+    [JsonProperty("author")]
+    public AuthorInfo? Author { get; set; }
+
+    [JsonProperty("fields")]
+    public IEnumerable<FieldInfo>? Fields { get; set; }
+
+    public class FooterInfo
     {
-        private static Dictionary<ContentType, string> ContentTypeNameMap => new Dictionary<ContentType, string>
-        {
-            { ContentType.Rich, "rich" },
-            { ContentType.Image, "image" },
-            { ContentType.Video, "video" },
-            { ContentType.AnimatedGif, "gifv" },
-            { ContentType.Article, "article" },
-            { ContentType.Link, "link" },
-        };
+        [JsonProperty("text"), JsonRequired]
+        public string? Text { get; set; }
 
-        [JsonProperty("type")]
-        private string? _typeName;
+        [JsonProperty("icon_url")]
+        public string? IconUrl { get; set; }
 
-        [JsonIgnore]
-        public ContentType Type
-        {
-            get
-            {
-                return ContentTypeNameMap.First(kvp => kvp.Value == _typeName).Key;
-            }
+        [JsonProperty("proxy_icon_url")]
+        public string? ProxyIconUrl { get; set; }
+    }
 
-            set
-            {
-                _typeName = ContentTypeNameMap[value];
-            }
-        }
+    public class ImageInfo
+    {
+        [JsonProperty("url")]
+        public string? Url { get; set; }
 
-        [JsonProperty("title")]
-        public string? Title { get; set; }
+        [JsonProperty("proxy_url")]
+        public string? ProxyUrl { get; set; }
 
-        [JsonProperty("description")]
-        public string? Description { get; set; }
+        [JsonProperty("height")]
+        public int Height { get; set; }
+
+        [JsonProperty("width")]
+        public int Width { get; set; }
+    }
+
+    public class ThumbnailInfo : ImageInfo
+    {
+    }
+
+    public class VideoInfo
+    {
+        [JsonProperty("url")]
+        public string? Url { get; set; }
+
+        [JsonProperty("height")]
+        public int Height { get; set; }
+
+        [JsonProperty("width")]
+        public int Width { get; set; }
+    }
+
+    public class ProviderInfo
+    {
+        [JsonProperty("name")]
+        public string? Name { get; set; }
+
+        [JsonProperty("url")]
+        public string? Url { get; set; }
+    }
+
+    public class AuthorInfo
+    {
+        [JsonProperty("name")]
+        public string? Name { get; set; }
 
         [JsonProperty("url")]
         public string? Url { get; set; }
 
-        [JsonProperty("timestamp")]
-        public string? Timestamp { get; set; }
+        [JsonProperty("icon_url")]
+        public string? IconUrl { get; set; }
 
-        [JsonProperty("color")]
-        public int Color { get; set; }
+        [JsonProperty("proxy_icon_url")]
+        public string? ProxyIconUrl { get; set; }
+    }
 
-        [JsonProperty("footer")]
-        public FooterInfo? Footer { get; set; }
+    public class FieldInfo
+    {
+        [JsonProperty("name"), JsonRequired]
+        public string? Name { get; set; }
 
-        [JsonProperty("image")]
-        public ImageInfo? Image { get; set; }
+        [JsonProperty("value"), JsonRequired]
+        public string? Value { get; set; }
 
-        [JsonProperty("thumbnail")]
-        public ThumbnailInfo? Thumbnail { get; set; }
+        [JsonProperty("inline")]
+        public bool Inline { get; set; }
+    }
 
-        [JsonProperty("video")]
-        public VideoInfo? Video { get; set; }
-
-        [JsonProperty("provider")]
-        public ProviderInfo? Provider { get; set; }
-
-        [JsonProperty("author")]
-        public AuthorInfo? Author { get; set; }
-
-        [JsonProperty("fields")]
-        public IEnumerable<FieldInfo>? Fields { get; set; }
-
-        public class FooterInfo
-        {
-            [JsonProperty("text"), JsonRequired]
-            public string? Text { get; set; }
-
-            [JsonProperty("icon_url")]
-            public string? IconUrl { get; set; }
-
-            [JsonProperty("proxy_icon_url")]
-            public string? ProxyIconUrl { get; set; }
-        }
-
-        public class ImageInfo
-        {
-            [JsonProperty("url")]
-            public string? Url { get; set; }
-
-            [JsonProperty("proxy_url")]
-            public string? ProxyUrl { get; set; }
-
-            [JsonProperty("height")]
-            public int Height { get; set; }
-
-            [JsonProperty("width")]
-            public int Width { get; set; }
-        }
-
-        public class ThumbnailInfo : ImageInfo
-        {
-        }
-
-        public class VideoInfo
-        {
-            [JsonProperty("url")]
-            public string? Url { get; set; }
-
-            [JsonProperty("height")]
-            public int Height { get; set; }
-
-            [JsonProperty("width")]
-            public int Width { get; set; }
-        }
-
-        public class ProviderInfo
-        {
-            [JsonProperty("name")]
-            public string? Name { get; set; }
-
-            [JsonProperty("url")]
-            public string? Url { get; set; }
-        }
-
-        public class AuthorInfo
-        {
-            [JsonProperty("name")]
-            public string? Name { get; set; }
-
-            [JsonProperty("url")]
-            public string? Url { get; set; }
-
-            [JsonProperty("icon_url")]
-            public string? IconUrl { get; set; }
-
-            [JsonProperty("proxy_icon_url")]
-            public string? ProxyIconUrl { get; set; }
-        }
-
-        public class FieldInfo
-        {
-            [JsonProperty("name"), JsonRequired]
-            public string? Name { get; set; }
-
-            [JsonProperty("value"), JsonRequired]
-            public string? Value { get; set; }
-
-            [JsonProperty("inline")]
-            public bool Inline { get; set; }
-        }
-
-        public enum ContentType
-        {
-            Rich,
-            Image,
-            Video,
-            AnimatedGif,
-            Article,
-            Link,
-        }
+    public enum ContentType
+    {
+        Rich,
+        Image,
+        Video,
+        AnimatedGif,
+        Article,
+        Link,
     }
 }

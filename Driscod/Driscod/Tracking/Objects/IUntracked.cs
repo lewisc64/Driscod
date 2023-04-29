@@ -1,6 +1,5 @@
-﻿namespace Driscod.Tracking.Objects
+﻿namespace Driscod.Tracking.Objects;
+
+public interface IUntracked : IDiscordObject
 {
-    public interface IUntracked : IDiscordObject
-    {
-    }
 }

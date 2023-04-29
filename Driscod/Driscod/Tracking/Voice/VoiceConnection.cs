@@ -9,193 +9,192 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Driscod.Tracking.Voice
+namespace Driscod.Tracking.Voice;
+
+public class VoiceConnection : IDisposable
 {
-    public class VoiceConnection : IDisposable
+    private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
+    private readonly string _channelId;
+    private readonly IBot _bot;
+    private VoiceGateway? _voiceGateway = null;
+    private AudioStreamer? _audioStreamer = null;
+
+    public EventHandler? OnPlayAudio { get; set; }
+    public EventHandler? OnStopAudio { get; set; }
+
+    internal VoiceConnection(Channel channel)
     {
-        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+        _channelId = channel.Id;
+        _bot = channel.Bot;
+    }
 
-        private readonly string _channelId;
-        private readonly IBot _bot;
-        private VoiceGateway? _voiceGateway = null;
-        private AudioStreamer? _audioStreamer = null;
+    public bool Playing => _audioStreamer?.TransmittingAudio ?? false;
 
-        public EventHandler? OnPlayAudio { get; set; }
-        public EventHandler? OnStopAudio { get; set; }
+    public bool Connected { get; private set; } = false;
 
-        internal VoiceConnection(Channel channel)
+    public bool Stale => !(_voiceGateway?.Running ?? true);
+
+    public Channel Channel => _bot.GetObject<Channel>(_channelId) ?? throw new InvalidOperationException("The channel no longer exists.");
+
+    public Guild Guild => Channel.Guild ?? throw new InvalidOperationException("The channel is not part of a guild.");
+
+    public async Task Connect()
+    {
+        if (Connected)
         {
-            _channelId = channel.Id;
-            _bot = channel.Bot;
+            throw new InvalidOperationException("Already connected.");
         }
-
-        public bool Playing => _audioStreamer?.TransmittingAudio ?? false;
-
-        public bool Connected { get; private set; } = false;
-
-        public bool Stale => !(_voiceGateway?.Running ?? true);
-
-        public Channel Channel => _bot.GetObject<Channel>(_channelId) ?? throw new InvalidOperationException("The channel no longer exists.");
-
-        public Guild Guild => Channel.Guild ?? throw new InvalidOperationException("The channel is not part of a guild.");
-
-        public async Task Connect()
+        await CreateVoiceGateway();
+        _audioStreamer = _voiceGateway!.CreateAudioStreamer();
+        _audioStreamer.OnAudioStart += (a, b) =>
         {
-            if (Connected)
-            {
-                throw new InvalidOperationException("Already connected.");
-            }
-            await CreateVoiceGateway();
-            _audioStreamer = _voiceGateway!.CreateAudioStreamer();
-            _audioStreamer.OnAudioStart += (a, b) =>
-            {
-                OnPlayAudio?.Invoke(this, EventArgs.Empty);
-            };
-            _audioStreamer.OnAudioStop += (a, b) =>
-            {
-                OnStopAudio?.Invoke(this, EventArgs.Empty);
-            };
-            Connected = true;
-        }
-
-        public async Task Disconnect()
+            OnPlayAudio?.Invoke(this, EventArgs.Empty);
+        };
+        _audioStreamer.OnAudioStop += (a, b) =>
         {
-            ThrowIfNotConnected();
+            OnStopAudio?.Invoke(this, EventArgs.Empty);
+        };
+        Connected = true;
+    }
 
-            await _voiceGateway!.Stop();
-            Connected = false;
-        }
+    public async Task Disconnect()
+    {
+        ThrowIfNotConnected();
 
-        public async Task PlayAudio(IAudioSource audioSource, CancellationToken cancellationToken = default)
+        await _voiceGateway!.Stop();
+        Connected = false;
+    }
+
+    public async Task PlayAudio(IAudioSource audioSource, CancellationToken cancellationToken = default)
+    {
+        ThrowIfStale();
+        ThrowIfNotConnected();
+
+        var tcs = new TaskCompletionSource<bool>();
+
+        EventHandler handler = (a, b) =>
         {
-            ThrowIfStale();
-            ThrowIfNotConnected();
+            tcs.TrySetResult(true);
+        };
 
-            var tcs = new TaskCompletionSource<bool>();
+        _audioStreamer!.OnAudioStop += handler;
 
-            EventHandler handler = (a, b) =>
+        var inControl = false;
+
+        try
+        {
+            cancellationToken.Register(() =>
             {
-                tcs.TrySetResult(true);
-            };
-
-            _audioStreamer!.OnAudioStop += handler;
-
-            var inControl = false;
-
-            try
-            {
-                cancellationToken.Register(() =>
+                if (inControl)
                 {
-                    if (inControl)
-                    {
-                        _audioStreamer.ClearAudio();
-                    }
-                });
-                inControl = true;
-                await _audioStreamer.SendAudio(audioSource, cancellationToken: cancellationToken);
-                await _audioStreamer.QueueSilence();
-                await tcs.Task;
-            }
-            finally
-            {
-                inControl = false;
-                _audioStreamer.OnAudioStop -= handler;
-            }
-        }
-
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        protected virtual void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                Disconnect().Wait();
-            }
-        }
-
-        private async Task CreateVoiceGateway()
-        {
-            var callCount = 0;
-            Action sendAction = async () =>
-            {
-                if (++callCount >= 2)
-                {
-                    await Channel.DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new JObject
-                    {
-                        { "guild_id", Channel.Guild!.Id },
-                        { "channel_id", Channel.Id },
-                        { "self_mute", false },
-                        { "self_deaf", false },
-                    });
+                    _audioStreamer.ClearAudio();
                 }
-            };
+            });
+            inControl = true;
+            await _audioStreamer.SendAudio(audioSource, cancellationToken: cancellationToken);
+            await _audioStreamer.QueueSilence();
+            await tcs.Task;
+        }
+        finally
+        {
+            inControl = false;
+            _audioStreamer.OnAudioStop -= handler;
+        }
+    }
 
-            JObject? stateData = null;
-            JObject? serverData = null;
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
 
-            try
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            Disconnect().Wait();
+        }
+    }
+
+    private async Task CreateVoiceGateway()
+    {
+        var callCount = 0;
+        Action sendAction = async () =>
+        {
+            if (++callCount >= 2)
             {
-                Task.WhenAll(
-                    Task.Run(async () =>
-                    {
-                        stateData = await Channel.DiscoveredOnShard.ListenForEvent<JObject>(
-                            (int)Shard.MessageType.Dispatch,
-                            EventNames.VoiceStateUpdate,
-                            listenerCreateCallback: sendAction,
-                            validator: data =>
-                            {
-                                return data!["guild_id"]?.ToObject<string>() == Guild.Id && data["channel_id"]?.ToObject<string>() == Channel.Id && data["user_id"]?.ToObject<string>() == _bot.User.Id;
-                            },
-                            timeout: TimeSpan.FromSeconds(10));
-                    }),
-                    Task.Run(async () =>
-                    {
-                        serverData = await Channel.DiscoveredOnShard.ListenForEvent<JObject>(
-                            (int)Shard.MessageType.Dispatch,
-                            EventNames.VoiceServerUpdate,
-                            listenerCreateCallback: sendAction,
-                            validator: data =>
-                            {
-                                return data!["guild_id"]?.ToObject<string>() == Guild.Id;
-                            },
-                            timeout: TimeSpan.FromSeconds(10));
-                    })).Wait(TimeSpan.FromSeconds(10));
+                await Channel.DiscoveredOnShard.Send((int)Shard.MessageType.VoiceStateUpdate, new JObject
+                {
+                    { "guild_id", Channel.Guild!.Id },
+                    { "channel_id", Channel.Id },
+                    { "self_mute", false },
+                    { "self_deaf", false },
+                });
             }
-            catch (TimeoutException ex)
-            {
-                Logger.Warn(ex, "Timed out while fetching voice data.");
-            }
+        };
 
-            _voiceGateway = new VoiceGateway(
-                    Channel.DiscoveredOnShard,
-                    Connectivity.FormatVoiceSocketEndpoint(serverData?["endpoint"]?.ToObject<string>() ?? throw new InvalidOperationException("Failed to get voice socket endpoint.")),
-                    Guild.Id,
-                    _bot.User.Id,
-                    (stateData?["session_id"]?.ToObject<string>()) ?? throw new InvalidOperationException("Failed to get session ID."),
-                    serverData?["token"]?.ToObject<string>() ?? throw new InvalidOperationException("Failed to get token."));
+        JObject? stateData = null;
+        JObject? serverData = null;
 
-            await _voiceGateway.Start();
-            await _voiceGateway.WaitForReady();
+        try
+        {
+            Task.WhenAll(
+                Task.Run(async () =>
+                {
+                    stateData = await Channel.DiscoveredOnShard.ListenForEvent<JObject>(
+                        (int)Shard.MessageType.Dispatch,
+                        EventNames.VoiceStateUpdate,
+                        listenerCreateCallback: sendAction,
+                        validator: data =>
+                        {
+                            return data!["guild_id"]?.ToObject<string>() == Guild.Id && data["channel_id"]?.ToObject<string>() == Channel.Id && data["user_id"]?.ToObject<string>() == _bot.User.Id;
+                        },
+                        timeout: TimeSpan.FromSeconds(10));
+                }),
+                Task.Run(async () =>
+                {
+                    serverData = await Channel.DiscoveredOnShard.ListenForEvent<JObject>(
+                        (int)Shard.MessageType.Dispatch,
+                        EventNames.VoiceServerUpdate,
+                        listenerCreateCallback: sendAction,
+                        validator: data =>
+                        {
+                            return data!["guild_id"]?.ToObject<string>() == Guild.Id;
+                        },
+                        timeout: TimeSpan.FromSeconds(10));
+                })).Wait(TimeSpan.FromSeconds(10));
+        }
+        catch (TimeoutException ex)
+        {
+            Logger.Warn(ex, "Timed out while fetching voice data.");
         }
 
-        private void ThrowIfStale()
-        {
-            if (Stale)
-            {
-                throw new InvalidOperationException("Connection object is stale.");
-            }
-        }
+        _voiceGateway = new VoiceGateway(
+                Channel.DiscoveredOnShard,
+                Connectivity.FormatVoiceSocketEndpoint(serverData?["endpoint"]?.ToObject<string>() ?? throw new InvalidOperationException("Failed to get voice socket endpoint.")),
+                Guild.Id,
+                _bot.User.Id,
+                (stateData?["session_id"]?.ToObject<string>()) ?? throw new InvalidOperationException("Failed to get session ID."),
+                serverData?["token"]?.ToObject<string>() ?? throw new InvalidOperationException("Failed to get token."));
 
-        private void ThrowIfNotConnected()
+        await _voiceGateway.Start();
+        await _voiceGateway.WaitForReady();
+    }
+
+    private void ThrowIfStale()
+    {
+        if (Stale)
         {
-            if (!Connected)
-            {
-                throw new InvalidOperationException("Not connected.");
-            }
+            throw new InvalidOperationException("Connection object is stale.");
+        }
+    }
+
+    private void ThrowIfNotConnected()
+    {
+        if (!Connected)
+        {
+            throw new InvalidOperationException("Not connected.");
         }
     }
 }

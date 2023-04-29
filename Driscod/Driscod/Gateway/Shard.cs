@@ -5,115 +5,114 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace Driscod.Gateway
+namespace Driscod.Gateway;
+
+public class Shard : Gateway
 {
-    public class Shard : Gateway
+    private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
+    private readonly string _token;
+    private readonly int _shardNumber;
+    private readonly int _totalShards;
+    private readonly int _intents;
+    private string? _sessionId;
+
+    public Shard(string token, int shardNumber, int totalShards, int intents)
+        : base(Connectivity.WebSocketEndpoint)
     {
-        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+        _token = token;
+        _shardNumber = shardNumber;
+        _totalShards = totalShards;
+        _intents = intents;
 
-        private readonly string _token;
-        private readonly int _shardNumber;
-        private readonly int _totalShards;
-        private readonly int _intents;
-        private string? _sessionId;
-
-        public Shard(string token, int shardNumber, int totalShards, int intents)
-            : base(Connectivity.WebSocketEndpoint)
+        AddListener<JObject>((int)MessageType.Hello, async data =>
         {
-            _token = token;
-            _shardNumber = shardNumber;
-            _totalShards = totalShards;
-            _intents = intents;
+            HeartbeatIntervalMilliseconds = data?["heartbeat_interval"]?.ToObject<int>() ?? throw new InvalidOperationException("Did not receive a heartbeat interval in the hello event.");
 
-            AddListener<JObject>((int)MessageType.Hello, async data =>
+            if (KeepSocketOpen)
             {
-                HeartbeatIntervalMilliseconds = data?["heartbeat_interval"]?.ToObject<int>() ?? throw new InvalidOperationException("Did not receive a heartbeat interval in the hello event.");
-
-                if (KeepSocketOpen)
+                await Send((int)MessageType.Resume, new JObject
                 {
-                    await Send((int)MessageType.Resume, new JObject
-                    {
-                        { "token", _token },
-                        { "session_id", _sessionId },
-                        { "seq", Sequence },
-                    });
-                }
-                else
-                {
-                    await Send((int)MessageType.Identify, Identity);
-                }
-
-                KeepSocketOpen = true;
-                StartHeart();
-            });
-
-            AddListener<JObject>((int)MessageType.Dispatch, EventNames.Ready, data =>
+                    { "token", _token },
+                    { "session_id", _sessionId },
+                    { "seq", Sequence },
+                });
+            }
+            else
             {
-                if (DetailedLogging)
-                {
-                    Logger.Info($"[{Name}] Ready.");
-                }
-                Ready = true;
-                _sessionId = data?["session_id"]?.ToObject<string>() ?? throw new InvalidOperationException("Did not receive a session ID in the ready event.");
-            });
+                await Send((int)MessageType.Identify, Identity);
+            }
 
-            AddListener<object>((int)MessageType.InvalidSession, async _ =>
-            {
-                Logger.Warn($"[{Name}] Invalid session.");
-                await Restart();
-            });
-        }
+            KeepSocketOpen = true;
+            StartHeart();
+        });
 
-        private JObject Identity => new JObject
+        AddListener<JObject>((int)MessageType.Dispatch, EventNames.Ready, data =>
         {
-            { "token", _token },
-            { "shard", JToken.FromObject(new[] { _shardNumber, _totalShards })},
+            if (DetailedLogging)
             {
-                "properties", new JObject
-                {
-                    { "$os", Environment.OSVersion.VersionString },
-                    { "$browser", "c#" },
-                    { "$device", "c#" },
-                    { "$referrer", "" },
-                    { "$referring_domain", "" },
-                }
+                Logger.Info($"[{Name}] Ready.");
+            }
+            Ready = true;
+            _sessionId = data?["session_id"]?.ToObject<string>() ?? throw new InvalidOperationException("Did not receive a session ID in the ready event.");
+        });
+
+        AddListener<object>((int)MessageType.InvalidSession, async _ =>
+        {
+            Logger.Warn($"[{Name}] Invalid session.");
+            await Restart();
+        });
+    }
+
+    private JObject Identity => new JObject
+    {
+        { "token", _token },
+        { "shard", JToken.FromObject(new[] { _shardNumber, _totalShards })},
+        {
+            "properties", new JObject
+            {
+                { "$os", Environment.OSVersion.VersionString },
+                { "$browser", "c#" },
+                { "$device", "c#" },
+                { "$referrer", "" },
+                { "$referring_domain", "" },
+            }
+        },
+        { "intents", _intents },
+    };
+
+    protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4010, 4011, 4012, 4013, 4014 };
+
+    public bool Ready { get; private set; }
+
+    public string BotName { get; set; } = "Unnamed";
+
+    public override string Name => $"{BotName}-{_shardNumber}";
+
+    protected override async Task Heartbeat()
+    {
+        await ListenForEvent<JObject>(
+            (int)MessageType.HeartbeatAck,
+            listenerCreateCallback: async () =>
+            {
+                await Send((int)MessageType.Heartbeat, Sequence);
             },
-            { "intents", _intents },
-        };
+            timeout: TimeSpan.FromSeconds(10));
+    }
 
-        protected override IEnumerable<int> RespectedCloseSocketCodes => new[] { 4010, 4011, 4012, 4013, 4014 };
-
-        public bool Ready { get; private set; }
-
-        public string BotName { get; set; } = "Unnamed";
-
-        public override string Name => $"{BotName}-{_shardNumber}";
-
-        protected override async Task Heartbeat()
-        {
-            await ListenForEvent<JObject>(
-                (int)MessageType.HeartbeatAck,
-                listenerCreateCallback: async () =>
-                {
-                    await Send((int)MessageType.Heartbeat, Sequence);
-                },
-                timeout: TimeSpan.FromSeconds(10));
-        }
-
-        public enum MessageType
-        {
-            Any = -1,
-            Dispatch = 0,
-            Heartbeat = 1,
-            Identify = 2,
-            StatusUpdate = 3,
-            VoiceStateUpdate = 4,
-            Resume = 6,
-            Reconnect = 7,
-            RequestGuildMembers = 8,
-            InvalidSession = 9,
-            Hello = 10,
-            HeartbeatAck = 11,
-        }
+    public enum MessageType
+    {
+        Any = -1,
+        Dispatch = 0,
+        Heartbeat = 1,
+        Identify = 2,
+        StatusUpdate = 3,
+        VoiceStateUpdate = 4,
+        Resume = 6,
+        Reconnect = 7,
+        RequestGuildMembers = 8,
+        InvalidSession = 9,
+        Hello = 10,
+        HeartbeatAck = 11,
     }
 }

@@ -5,96 +5,95 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace Driscod.Audio.AudioSource
+namespace Driscod.Audio.AudioSource;
+
+public class AudioFile : IAudioSource
 {
-    public class AudioFile : IAudioSource
+    private readonly string _path;
+
+    public string Name => _path.Split('\\', '/', StringSplitOptions.None).Last();
+
+    public AudioFile(string path)
     {
-        private readonly string _path;
+        _path = path ?? throw new ArgumentNullException(nameof(path), $"'{nameof(path)}' cannot be null.");
+    }
 
-        public string Name => _path.Split('\\', '/', StringSplitOptions.None).Last();
-
-        public AudioFile(string path)
+    public Task<Stream> GetSampleStream(int sampleRate, int channels)
+    {
+        if (channels != 1 && channels != 2)
         {
-            _path = path ?? throw new ArgumentNullException(nameof(path), $"'{nameof(path)}' cannot be null.");
+            throw new ArgumentOutOfRangeException(nameof(channels), "Only 1 or 2 channels are allowed.");
         }
 
-        public Task<Stream> GetSampleStream(int sampleRate, int channels)
+        using (var reader = new MediaFoundationReader(_path))
         {
-            if (channels != 1 && channels != 2)
+            ISampleProvider sampler = new WdlResamplingSampleProvider(reader.ToSampleProvider(), sampleRate);
+
+            switch (channels)
             {
-                throw new ArgumentOutOfRangeException(nameof(channels), "Only 1 or 2 channels are allowed.");
+                case 1:
+                    sampler = sampler.ToMono();
+                    break;
+                case 2:
+                    sampler = sampler.ToStereo();
+                    break;
             }
 
-            using (var reader = new MediaFoundationReader(_path))
-            {
-                ISampleProvider sampler = new WdlResamplingSampleProvider(reader.ToSampleProvider(), sampleRate);
+            return Task.FromResult<Stream>(new SamplerWrapper(sampler));
+        }
+    }
 
-                switch (channels)
-                {
-                    case 1:
-                        sampler = sampler.ToMono();
-                        break;
-                    case 2:
-                        sampler = sampler.ToStereo();
-                        break;
-                }
+    private sealed class SamplerWrapper : Stream
+    {
+        private readonly ISampleProvider _sampler;
 
-                return Task.FromResult<Stream>(new SamplerWrapper(sampler));
-            }
+        public SamplerWrapper(ISampleProvider sampler)
+        {
+            _sampler = sampler;
         }
 
-        private sealed class SamplerWrapper : Stream
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override void Flush()
         {
-            private readonly ISampleProvider _sampler;
+            throw new NotSupportedException();
+        }
 
-            public SamplerWrapper(ISampleProvider sampler)
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var floatBuffer = new float[buffer.Length / 4];
+            var floatsRead = _sampler.Read(floatBuffer, 0, count / 4);
+
+            for (var i = 0; i < floatBuffer.Length; i++)
             {
-                _sampler = sampler;
+                var bytes = BitConverter.GetBytes(floatBuffer[i]);
+                bytes.CopyTo(buffer, i * 4);
             }
 
-            public override bool CanRead => true;
+            return floatsRead * 4;
+        }
 
-            public override bool CanSeek => false;
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
 
-            public override bool CanWrite => false;
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
 
-            public override long Length => throw new NotSupportedException();
-
-            public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
-
-            public override void Flush()
-            {
-                throw new NotSupportedException();
-            }
-
-            public override int Read(byte[] buffer, int offset, int count)
-            {
-                var floatBuffer = new float[buffer.Length / 4];
-                var floatsRead = _sampler.Read(floatBuffer, 0, count / 4);
-
-                for (var i = 0; i < floatBuffer.Length; i++)
-                {
-                    var bytes = BitConverter.GetBytes(floatBuffer[i]);
-                    bytes.CopyTo(buffer, i * 4);
-                }
-
-                return floatsRead * 4;
-            }
-
-            public override long Seek(long offset, SeekOrigin origin)
-            {
-                throw new NotSupportedException();
-            }
-
-            public override void SetLength(long value)
-            {
-                throw new NotSupportedException();
-            }
-
-            public override void Write(byte[] buffer, int offset, int count)
-            {
-                throw new NotSupportedException();
-            }
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
         }
     }
 }

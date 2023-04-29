@@ -5,74 +5,73 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 
-namespace Driscod.Tracking.Objects
+namespace Driscod.Tracking.Objects;
+
+public class User : DiscordObject, IMessageable, IMentionable
 {
-    public class User : DiscordObject, IMessageable, IMentionable
+    public IEnumerable<GuildMember> GuildMemberships => Bot.Guilds
+        .Select(x => x.Members.FirstOrDefault(x => x.User == this))
+        .Where(x => x is not null)
+        .Cast<GuildMember>();
+
+    public IEnumerable<Presence> Presences => Bot.Guilds
+        .Where(x => x.Members.Select(x => x.User).Contains(this))
+        .Select(x => x.Presences.FirstOrDefault(x => x.User == this))
+        .Where(x => x is not null)
+        .Cast<Presence>();
+
+    public string? Username { get; private set; }
+
+    public string? Discriminator { get; private set; }
+
+    public string? Avatar { get; private set; }
+
+    public bool IsBot { get; private set; }
+
+    public async Task<Channel> GetDmChannel()
     {
-        public IEnumerable<GuildMember> GuildMemberships => Bot.Guilds
-            .Select(x => x.Members.FirstOrDefault(x => x.User == this))
-            .Where(x => x is not null)
-            .Cast<GuildMember>();
+        var result = await Bot.SendJson(HttpMethod.Post, @"users/{0}/channels", new[] { Bot.User.Id }, new JObject { { "recipient_id", Id } });
 
-        public IEnumerable<Presence> Presences => Bot.Guilds
-            .Where(x => x.Members.Select(x => x.User).Contains(this))
-            .Select(x => x.Presences.FirstOrDefault(x => x.User == this))
-            .Where(x => x is not null)
-            .Cast<Presence>();
-
-        public string? Username { get; private set; }
-
-        public string? Discriminator { get; private set; }
-
-        public string? Avatar { get; private set; }
-
-        public bool IsBot { get; private set; }
-
-        public async Task<Channel> GetDmChannel()
+        if (result is null)
         {
-            var result = await Bot.SendJson(HttpMethod.Post, @"users/{0}/channels", new[] { Bot.User.Id }, new JObject { { "recipient_id", Id } });
-
-            if (result is null)
-            {
-                throw new InvalidOperationException("Null response from DM channel fetch.");
-            }
-
-            Bot.CreateOrUpdateObject<Channel>(result, DiscoveredOnShard);
-            return Bot.GetObject<Channel>(result["id"]!.ToObject<string>()!)!;
+            throw new InvalidOperationException("Null response from DM channel fetch.");
         }
 
-        public async Task SendMessage(MessageEmbed embed)
-        {
-            await SendMessage(null, embed);
-        }
+        Bot.CreateOrUpdateObject<Channel>(result, DiscoveredOnShard);
+        return Bot.GetObject<Channel>(result["id"]!.ToObject<string>()!)!;
+    }
 
-        public async Task SendMessage(IMessageAttachment file)
-        {
-            await SendMessage(null, attachments: new[] { file });
-        }
+    public async Task SendMessage(MessageEmbed embed)
+    {
+        await SendMessage(null, embed);
+    }
 
-        public async Task SendMessage(string? message, MessageEmbed? embed = null, IEnumerable<IMessageAttachment>? attachments = null)
-        {
-            await (await GetDmChannel()).SendMessage(message, embed: embed, attachments: attachments);
-        }
+    public async Task SendMessage(IMessageAttachment file)
+    {
+        await SendMessage(null, attachments: new[] { file });
+    }
 
-        public string CreateMention()
-        {
-            return $"<@{Id}>";
-        }
+    public async Task SendMessage(string? message, MessageEmbed? embed = null, IEnumerable<IMessageAttachment>? attachments = null)
+    {
+        await (await GetDmChannel()).SendMessage(message, embed: embed, attachments: attachments);
+    }
 
-        public override string ToString()
-        {
-            return $"{Username}:{Discriminator}";
-        }
+    public string CreateMention()
+    {
+        return $"<@{Id}>";
+    }
 
-        internal override void UpdateFromDocument(JObject doc)
-        {
-            Id = doc["id"]!.ToObject<string>()!;
-            Username = doc["username"]!.ToObject<string>();
-            Discriminator = doc["discriminator"]!.ToObject<string>();
-            Avatar = doc.ContainsKey("avatar") ? doc["avatar"]!.ToObject<string>() : null;
-            IsBot = doc.ContainsKey("bot") && doc["bot"]!.ToObject<bool>();
-        }
+    public override string ToString()
+    {
+        return $"{Username}:{Discriminator}";
+    }
+
+    internal override void UpdateFromDocument(JObject doc)
+    {
+        Id = doc["id"]!.ToObject<string>()!;
+        Username = doc["username"]!.ToObject<string>();
+        Discriminator = doc["discriminator"]!.ToObject<string>();
+        Avatar = doc.ContainsKey("avatar") ? doc["avatar"]!.ToObject<string>() : null;
+        IsBot = doc.ContainsKey("bot") && doc["bot"]!.ToObject<bool>();
     }
 }

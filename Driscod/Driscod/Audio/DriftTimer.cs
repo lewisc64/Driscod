@@ -3,38 +3,37 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Driscod.Audio
+namespace Driscod.Audio;
+
+public class DriftTimer
 {
-    public class DriftTimer
+    private readonly Stopwatch _stopwatch = new Stopwatch();
+
+    private TimeSpan _interval;
+
+    private double _drift = 0;
+
+    private double IntervalMilliseconds => _interval.TotalMilliseconds;
+
+    public DriftTimer(TimeSpan interval)
     {
-        private readonly Stopwatch _stopwatch = new Stopwatch();
+        _interval = interval;
+    }
 
-        private TimeSpan _interval;
-
-        private double _drift = 0;
-
-        private double IntervalMilliseconds => _interval.TotalMilliseconds;
-
-        public DriftTimer(TimeSpan interval)
+    public async Task Wait(CancellationToken cancellationToken = default)
+    {
+        if (!_stopwatch.IsRunning)
         {
-            _interval = interval;
+            _stopwatch.Start();
         }
 
-        public async Task Wait(CancellationToken cancellationToken = default)
+        var delay = (int)Math.Max(IntervalMilliseconds - _stopwatch.Elapsed.TotalMilliseconds + _drift, 0);
+        if (delay > 0)
         {
-            if (!_stopwatch.IsRunning)
-            {
-                _stopwatch.Start();
-            }
-
-            var delay = (int)Math.Max(IntervalMilliseconds - _stopwatch.Elapsed.TotalMilliseconds + _drift, 0);
-            if (delay > 0)
-            {
-                await Task.Delay(delay, cancellationToken);
-            }
-
-            _drift += IntervalMilliseconds - _stopwatch.Elapsed.TotalMilliseconds;
-            _stopwatch.Restart();
+            await Task.Delay(delay, cancellationToken);
         }
+
+        _drift += IntervalMilliseconds - _stopwatch.Elapsed.TotalMilliseconds;
+        _stopwatch.Restart();
     }
 }

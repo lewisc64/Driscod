@@ -1,11 +1,10 @@
-﻿namespace Driscod.Audio.Encoding
+﻿namespace Driscod.Audio.Encoding;
+
+public interface IAudioEncoder
 {
-    public interface IAudioEncoder
-    {
-        int SampleRate { get; }
+    int SampleRate { get; }
 
-        int Channels { get; }
+    int Channels { get; }
 
-        byte[] Encode(float[] samples);
-    }
+    byte[] Encode(float[] samples);
 }

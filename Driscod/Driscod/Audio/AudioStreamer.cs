@@ -12,129 +12,192 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Driscod.Audio
+namespace Driscod.Audio;
+
+public class AudioStreamer
 {
-    public class AudioStreamer
+    private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
+    private const int PacketChunkSize = 16;
+    private const int PacketIntervalMilliseconds = 20;
+    private readonly Stopwatch _packetlessStopwatch = new Stopwatch();
+    private readonly ConcurrentQueue<float[]> _rawPayloadQueue = new ConcurrentQueue<float[]>();
+    private readonly CancellationToken _globalCancellationToken;
+
+    public event EventHandler? OnAudioStart;
+    public event EventHandler? OnAudioStop;
+
+    public AudioStreamer(IAudioEncoder encoder, VoiceEndPointInfo endPointInfo, CancellationToken cancellationToken = default)
     {
-        private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+        Encoder = encoder;
+        EndPointInfo = endPointInfo;
+        _globalCancellationToken = cancellationToken;
 
-        private const int PacketChunkSize = 16;
-        private const int PacketIntervalMilliseconds = 20;
-        private readonly Stopwatch _packetlessStopwatch = new Stopwatch();
-        private readonly ConcurrentQueue<float[]> _rawPayloadQueue = new ConcurrentQueue<float[]>();
-        private readonly CancellationToken _globalCancellationToken;
+        new Thread(() => AudioLoop().Wait()).Start();
+    }
 
-        public event EventHandler? OnAudioStart;
-        public event EventHandler? OnAudioStop;
+    private int SamplesPerPacket => Encoder.SampleRate * PacketIntervalMilliseconds / 1000;
 
-        public AudioStreamer(IAudioEncoder encoder, VoiceEndPointInfo endPointInfo, CancellationToken cancellationToken = default)
+    private int MaxQueuedPackets => (int)AudioBufferSize.TotalMilliseconds / PacketIntervalMilliseconds;
+
+    public IAudioEncoder Encoder { get; }
+
+    public VoiceEndPointInfo EndPointInfo { get; }
+
+    public TimeSpan AudioBufferSize { get; set; } = TimeSpan.FromMinutes(1);
+
+    public bool TransmittingAudio { get; private set; } = false;
+
+    public async Task SendAudio(Stream sampleStream, CancellationToken cancellationToken = default)
+    {
+        var chunk = new List<float[]>();
+        var bytesRead = 0;
+
+        while (!_globalCancellationToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            Encoder = encoder;
-            EndPointInfo = endPointInfo;
-            _globalCancellationToken = cancellationToken;
+            var sampleBytes = new byte[SamplesPerPacket * Encoder.Channels * 4];
+            var bytesReadOfPacket = sampleStream.Read(sampleBytes, 0, sampleBytes.Length);
 
-            new Thread(() => AudioLoop().Wait()).Start();
+            chunk.Add(CastSamplesAsFloats(sampleBytes));
+
+            if (chunk.Count >= PacketChunkSize)
+            {
+                await EnqueuePackets(chunk, cancellationToken: cancellationToken);
+                chunk.Clear();
+            }
+
+            if (bytesReadOfPacket < sampleBytes.Length)
+            {
+                break;
+            }
+
+            bytesRead += SamplesPerPacket * Encoder.Channels;
         }
 
-        private int SamplesPerPacket => Encoder.SampleRate * PacketIntervalMilliseconds / 1000;
+        await EnqueuePackets(chunk, cancellationToken: cancellationToken);
+    }
 
-        private int MaxQueuedPackets => (int)AudioBufferSize.TotalMilliseconds / PacketIntervalMilliseconds;
+    public async Task SendAudio(float[] samples, CancellationToken cancellationToken = default)
+    {
+        await SendAudio(new MemoryStream(samples.SelectMany(x => BitConverter.GetBytes(x)).ToArray()), cancellationToken: cancellationToken);
+    }
 
-        public IAudioEncoder Encoder { get; }
+    public async Task SendAudio(IAudioSource audioSource, CancellationToken cancellationToken = default)
+    {
+        await SendAudio(await audioSource.GetSampleStream(Encoder.SampleRate, Encoder.Channels), cancellationToken: cancellationToken);
+    }
 
-        public VoiceEndPointInfo EndPointInfo { get; }
+    public async Task QueueSilence(int packets = 10)
+    {
+        await SendAudio(Enumerable.Repeat(0f, SamplesPerPacket * Encoder.Channels * packets).ToArray());
+    }
 
-        public TimeSpan AudioBufferSize { get; set; } = TimeSpan.FromMinutes(1);
+    public void ClearAudio()
+    {
+        _rawPayloadQueue.Clear();
+    }
 
-        public bool TransmittingAudio { get; private set; } = false;
+    private async Task AudioLoop()
+    {
+        var socket = new UdpSocket(EndPointInfo.SocketEndPoint);
+        var timer = new DriftTimer(TimeSpan.FromMilliseconds(PacketIntervalMilliseconds));
 
-        public async Task SendAudio(Stream sampleStream, CancellationToken cancellationToken = default)
+        uint timestamp = 0;
+        ushort sequence = 0;
+
+        try
         {
-            var chunk = new List<float[]>();
-            var bytesRead = 0;
-
-            while (!_globalCancellationToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            while (!_globalCancellationToken.IsCancellationRequested)
             {
-                var sampleBytes = new byte[SamplesPerPacket * Encoder.Channels * 4];
-                var bytesReadOfPacket = sampleStream.Read(sampleBytes, 0, sampleBytes.Length);
+                var packet = GetNextPacket(sequence, timestamp);
 
-                chunk.Add(CastSamplesAsFloats(sampleBytes));
+                await timer.Wait(_globalCancellationToken);
 
-                if (chunk.Count >= PacketChunkSize)
+                if (packet.Length > 0)
                 {
-                    await EnqueuePackets(chunk, cancellationToken: cancellationToken);
-                    chunk.Clear();
+                    await socket.Send(packet);
                 }
 
-                if (bytesReadOfPacket < sampleBytes.Length)
+                sequence++;
+                timestamp += (uint)SamplesPerPacket;
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // ignore
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, $"Exception in audio loop: {ex}");
+        }
+        finally
+        {
+            Logger.Debug("Audio loop stopped.");
+            ClearAudio();
+            if (TransmittingAudio)
+            {
+                TransmittingAudio = false;
+                Task.Run(() =>
                 {
-                    break;
-                }
+                    OnAudioStop?.Invoke(this, EventArgs.Empty);
+                }).Forget();
+            }
+        }
+    }
 
-                bytesRead += SamplesPerPacket * Encoder.Channels;
+    private async Task EnqueuePackets(IEnumerable<float[]> packets, CancellationToken cancellationToken = default)
+    {
+        foreach (var packet in packets)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
             }
 
-            await EnqueuePackets(chunk, cancellationToken: cancellationToken);
+            await EnqueuePacket(packet);
+        }
+    }
+
+    private async Task EnqueuePacket(float[] packet, CancellationToken cancellationToken = default)
+    {
+        while (_rawPayloadQueue.Count >= MaxQueuedPackets && !cancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(PacketIntervalMilliseconds / 2);
         }
 
-        public async Task SendAudio(float[] samples, CancellationToken cancellationToken = default)
+        if (cancellationToken.IsCancellationRequested)
         {
-            await SendAudio(new MemoryStream(samples.SelectMany(x => BitConverter.GetBytes(x)).ToArray()), cancellationToken: cancellationToken);
+            return;
         }
 
-        public async Task SendAudio(IAudioSource audioSource, CancellationToken cancellationToken = default)
+        _rawPayloadQueue.Enqueue(packet);
+    }
+
+    private byte[] GetNextPacket(ushort sequence, uint timestamp)
+    {
+        if (_rawPayloadQueue.TryDequeue(out float[]? payload))
         {
-            await SendAudio(await audioSource.GetSampleStream(Encoder.SampleRate, Encoder.Channels), cancellationToken: cancellationToken);
-        }
-
-        public async Task QueueSilence(int packets = 10)
-        {
-            await SendAudio(Enumerable.Repeat(0f, SamplesPerPacket * Encoder.Channels * packets).ToArray());
-        }
-
-        public void ClearAudio()
-        {
-            _rawPayloadQueue.Clear();
-        }
-
-        private async Task AudioLoop()
-        {
-            var socket = new UdpSocket(EndPointInfo.SocketEndPoint);
-            var timer = new DriftTimer(TimeSpan.FromMilliseconds(PacketIntervalMilliseconds));
-
-            uint timestamp = 0;
-            ushort sequence = 0;
-
-            try
+            if (!TransmittingAudio)
             {
-                while (!_globalCancellationToken.IsCancellationRequested)
+                _packetlessStopwatch.Reset();
+                TransmittingAudio = true;
+                Task.Run(() =>
                 {
-                    var packet = GetNextPacket(sequence, timestamp);
+                    OnAudioStart?.Invoke(this, EventArgs.Empty);
+                }).Forget();
+            }
 
-                    await timer.Wait(_globalCancellationToken);
-
-                    if (packet.Length > 0)
-                    {
-                        await socket.Send(packet);
-                    }
-
-                    sequence++;
-                    timestamp += (uint)SamplesPerPacket;
+            return AssemblePacket(payload, sequence, timestamp);
+        }
+        else
+        {
+            if (TransmittingAudio)
+            {
+                if (!_packetlessStopwatch.IsRunning)
+                {
+                    _packetlessStopwatch.Restart();
                 }
-            }
-            catch (TaskCanceledException)
-            {
-                // ignore
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, $"Exception in audio loop: {ex}");
-            }
-            finally
-            {
-                Logger.Debug("Audio loop stopped.");
-                ClearAudio();
-                if (TransmittingAudio)
+                if (_packetlessStopwatch.Elapsed >= TimeSpan.FromSeconds(0.5))
                 {
                     TransmittingAudio = false;
                     Task.Run(() =>
@@ -145,89 +208,25 @@ namespace Driscod.Audio
             }
         }
 
-        private async Task EnqueuePackets(IEnumerable<float[]> packets, CancellationToken cancellationToken = default)
+        return new byte[0];
+    }
+
+    private byte[] AssemblePacket(float[] payload, ushort sequence, uint timestamp)
+    {
+        return new RtpPacketGenerator()
+            .CreateHeader(sequence, timestamp, EndPointInfo.Ssrc)
+            .AddPayload(Encoder.Encode(payload))
+            .EncryptPayload(EndPointInfo.EncryptionMode, EndPointInfo.EncryptionKey)
+            .Finalize();
+    }
+
+    private float[] CastSamplesAsFloats(byte[] sampleBytes)
+    {
+        var samples = new float[sampleBytes.Length / 4];
+        for (var j = 0; j < sampleBytes.Length; j += 4)
         {
-            foreach (var packet in packets)
-            {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    return;
-                }
-
-                await EnqueuePacket(packet);
-            }
+            samples[j / 4] = BitConverter.ToSingle(sampleBytes, j);
         }
-
-        private async Task EnqueuePacket(float[] packet, CancellationToken cancellationToken = default)
-        {
-            while (_rawPayloadQueue.Count >= MaxQueuedPackets && !cancellationToken.IsCancellationRequested)
-            {
-                await Task.Delay(PacketIntervalMilliseconds / 2);
-            }
-
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-
-            _rawPayloadQueue.Enqueue(packet);
-        }
-
-        private byte[] GetNextPacket(ushort sequence, uint timestamp)
-        {
-            if (_rawPayloadQueue.TryDequeue(out float[]? payload))
-            {
-                if (!TransmittingAudio)
-                {
-                    _packetlessStopwatch.Reset();
-                    TransmittingAudio = true;
-                    Task.Run(() =>
-                    {
-                        OnAudioStart?.Invoke(this, EventArgs.Empty);
-                    }).Forget();
-                }
-
-                return AssemblePacket(payload, sequence, timestamp);
-            }
-            else
-            {
-                if (TransmittingAudio)
-                {
-                    if (!_packetlessStopwatch.IsRunning)
-                    {
-                        _packetlessStopwatch.Restart();
-                    }
-                    if (_packetlessStopwatch.Elapsed >= TimeSpan.FromSeconds(0.5))
-                    {
-                        TransmittingAudio = false;
-                        Task.Run(() =>
-                        {
-                            OnAudioStop?.Invoke(this, EventArgs.Empty);
-                        }).Forget();
-                    }
-                }
-            }
-
-            return new byte[0];
-        }
-
-        private byte[] AssemblePacket(float[] payload, ushort sequence, uint timestamp)
-        {
-            return new RtpPacketGenerator()
-                .CreateHeader(sequence, timestamp, EndPointInfo.Ssrc)
-                .AddPayload(Encoder.Encode(payload))
-                .EncryptPayload(EndPointInfo.EncryptionMode, EndPointInfo.EncryptionKey)
-                .Finalize();
-        }
-
-        private float[] CastSamplesAsFloats(byte[] sampleBytes)
-        {
-            var samples = new float[sampleBytes.Length / 4];
-            for (var j = 0; j < sampleBytes.Length; j += 4)
-            {
-                samples[j / 4] = BitConverter.ToSingle(sampleBytes, j);
-            }
-            return samples;
-        }
+        return samples;
     }
 }

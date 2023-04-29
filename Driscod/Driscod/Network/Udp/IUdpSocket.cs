@@ -2,14 +2,13 @@
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Driscod.Network.Udp
+namespace Driscod.Network.Udp;
+
+public interface IUdpSocket : IDisposable
 {
-    public interface IUdpSocket : IDisposable
-    {
-        byte[] GetNextPacket();
+    byte[] GetNextPacket();
 
-        Task<byte[]> WaitForNextPacket(TimeSpan? timeout = null, CancellationToken cancellationToken = default);
+    Task<byte[]> WaitForNextPacket(TimeSpan? timeout = null, CancellationToken cancellationToken = default);
 
-        Task Send(byte[] packet);
-    }
+    Task Send(byte[] packet);
 }

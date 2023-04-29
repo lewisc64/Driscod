@@ -1,7 +1,6 @@
-﻿namespace Driscod.Tracking.Objects
+﻿namespace Driscod.Tracking.Objects;
+
+public interface IMentionable
 {
-    public interface IMentionable
-    {
-        string CreateMention();
-    }
+    string CreateMention();
 }

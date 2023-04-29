@@ -1,42 +1,41 @@
 ﻿using Newtonsoft.Json.Linq;
 using System.Net.Http;
 
-namespace Driscod.Network
+namespace Driscod.Network;
+
+public static class Connectivity
 {
-    public static class Connectivity
+    public const string HttpApiEndpoint = "https://discordapp.com/api/v8";
+
+    public const string ChannelMessagesPathFormat = "channels/{0}/messages";
+
+    public const string ChannelMessagePathFormat = "channels/{0}/messages/{1}";
+
+    public const string ChannelMessageReactionPathFormat = "channels/{0}/messages/{1}/reactions/{2}/{3}";
+
+    public const string GuildMemberRolePathFormat = "guilds/{0}/members/{1}/roles/{2}";
+
+    public const int GatewayEventsPerMinute = 120 - 20; // slightly less for safety
+
+    public const int VoiceSampleRate = 48000;
+
+    public const int VoiceChannels = 2;
+
+    public static string WebSocketEndpoint
     {
-        public const string HttpApiEndpoint = "https://discordapp.com/api/v8";
-
-        public const string ChannelMessagesPathFormat = "channels/{0}/messages";
-
-        public const string ChannelMessagePathFormat = "channels/{0}/messages/{1}";
-
-        public const string ChannelMessageReactionPathFormat = "channels/{0}/messages/{1}/reactions/{2}/{3}";
-
-        public const string GuildMemberRolePathFormat = "guilds/{0}/members/{1}/roles/{2}";
-
-        public const int GatewayEventsPerMinute = 120 - 20; // slightly less for safety
-
-        public const int VoiceSampleRate = 48000;
-
-        public const int VoiceChannels = 2;
-
-        public static string WebSocketEndpoint
+        get
         {
-            get
-            {
-                var client = new HttpClient();
+            var client = new HttpClient();
 
-                var responseContent = client.GetAsync($"{HttpApiEndpoint}/gateway").Result.Content.ReadAsStringAsync().Result;
-                var doc = JObject.Parse(responseContent);
+            var responseContent = client.GetAsync($"{HttpApiEndpoint}/gateway").Result.Content.ReadAsStringAsync().Result;
+            var doc = JObject.Parse(responseContent);
 
-                return doc["url"]!.ToObject<string>()!;
-            }
+            return doc["url"]!.ToObject<string>()!;
         }
+    }
 
-        public static string FormatVoiceSocketEndpoint(string url)
-        {
-            return $"wss://{url}/?v=4";
-        }
+    public static string FormatVoiceSocketEndpoint(string url)
+    {
+        return $"wss://{url}/?v=4";
     }
 }

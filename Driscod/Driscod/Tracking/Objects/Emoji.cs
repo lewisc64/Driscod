@@ -1,34 +1,33 @@
 ﻿using Newtonsoft.Json.Linq;
 
-namespace Driscod.Tracking.Objects
+namespace Driscod.Tracking.Objects;
+
+public class Emoji : DiscordObject
 {
-    public class Emoji : DiscordObject
+    public JToken? Roles { get; private set; } // TODO
+
+    public bool RequireColons { get; private set; }
+
+    public string Name { get; private set; } = null!;
+
+    public bool Managed { get; private set; }
+
+    public bool Available { get; private set; }
+
+    public bool Animated { get; private set; }
+
+    public string FormatAsMessage()
     {
-        public JToken? Roles { get; private set; } // TODO
+        return $"<:{Name}:{Id}>";
+    }
 
-        public bool RequireColons { get; private set; }
-
-        public string Name { get; private set; } = null!;
-
-        public bool Managed { get; private set; }
-
-        public bool Available { get; private set; }
-
-        public bool Animated { get; private set; }
-
-        public string FormatAsMessage()
-        {
-            return $"<:{Name}:{Id}>";
-        }
-
-        internal override void UpdateFromDocument(JObject doc)
-        {
-            Id = doc["id"]!.ToObject<string>()!;
-            Roles = doc["roles"];
-            Name = doc["name"]!.ToObject<string>()!;
-            Managed = doc["managed"]!.ToObject<bool>();
-            Available = doc["available"]!.ToObject<bool>();
-            Animated = doc["animated"]!.ToObject<bool>();
-        }
+    internal override void UpdateFromDocument(JObject doc)
+    {
+        Id = doc["id"]!.ToObject<string>()!;
+        Roles = doc["roles"];
+        Name = doc["name"]!.ToObject<string>()!;
+        Managed = doc["managed"]!.ToObject<bool>();
+        Available = doc["available"]!.ToObject<bool>();
+        Animated = doc["animated"]!.ToObject<bool>();
     }
 }
